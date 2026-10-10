@@ -13,6 +13,9 @@ Một website lưu bút cuối cấp, thiết kế responsive cho máy tính và
 - Lưu thời gian do cơ sở dữ liệu ghi (`created_at`, múi giờ đầy đủ), hiển thị đến giây; rê chuột vào thời gian để xem timestamp ISO đầy đủ.
 - Chú thích dưới ảnh/video, tùy chỉnh màu chữ và font.
 - Reaction 🩷 😂 🥹 ✨ 🫶; mở danh sách để xem ai đã thả từng cảm xúc.
+- Trình crop ảnh trước khi upload: chọn tỉ lệ 1:1, 4:3, 16:9 hoặc theo ảnh gốc; kéo ảnh để căn khung và phóng to.
+- Trình cắt video trước khi upload: chọn điểm bắt đầu/kết thúc; đoạn cắt được xuất thành tệp mới trong trình duyệt, còn tệp gốc được giữ nếu hủy. Do dùng MediaRecorder, việc xuất diễn ra theo thời gian thực và có thể mã hóa lại; dùng Chrome/Edge mới nhất để tương thích tốt hơn.
+- Nút **Tải video về máy** hiện trên mọi bài video cho thành viên có quyền xem bài đó. Video vẫn dùng URL ký hạn của Storage, không mở bucket công khai. Nếu trình duyệt chặn tải blob cross-origin, nút sẽ mở video để người xem lưu từ trình phát.
 - Tìm kiếm nhanh; sắp xếp mới nhất/cũ nhất; lọc ảnh, video và bài của mình.
 - Modal, thông báo, animation, trạng thái rỗng, giao diện co giãn cho màn hình nhỏ và hỗ trợ `prefers-reduced-motion`.
 - **Phân quyền tại backend:** người dùng chỉ được sửa/xóa hàng `media_items` của chính mình; tệp Storage phải nằm trong thư mục mang UID của người đăng. Người xem khác không thể chiếm quyền chỉ bằng cách thay HTML trong trình duyệt.

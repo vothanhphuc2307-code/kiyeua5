@@ -32,6 +32,14 @@
   let lastUserId = null;
   let pageLoadToken = 0;
   let isUploading = false;
+  let activeCropIndex = 0;
+  let cropImage = null;
+  let cropObjectUrl = null;
+  let cropView = { zoom: 1, scale: 1, width: 800, height: 800, displayWidth: 0, displayHeight: 0, x: 0, y: 0, dragging: false, pointerX: 0, pointerY: 0 };
+  let activeTrimIndex = 0;
+  let trimObjectUrl = null;
+  let trimDuration = 0;
+  let isTrimming = false;
 
   function escapeHTML(value) {
     return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -337,7 +345,7 @@
     }).join('');
     return `<article class="memory-card" style="animation-delay:${Math.min(index * 35, 280)}ms" data-media-card="${escapeAttr(item.id)}">
       <div class="media-visual">${media}<span class="media-type-tag">${mediaLabel}</span>${own ? `<div class="media-owner-actions"><button class="tiny-action" data-action="edit-media" data-media-id="${escapeAttr(item.id)}" aria-label="Sửa kỷ niệm" title="Chỉnh sửa">✎</button><button class="tiny-action" data-action="delete-media" data-media-id="${escapeAttr(item.id)}" aria-label="Xóa kỷ niệm" title="Xóa">⌫</button></div>` : ''}</div>
-      <div class="media-card-body">${caption}<div class="media-meta">${avatarHTML(owner)}<span class="media-owner-name" data-action="view-profile" data-user-id="${escapeAttr(item.user_id)}" role="button" tabindex="0">${escapeHTML(displayName(owner))}</span><time class="media-timestamp" datetime="${escapeAttr(iso)}" title="Thời gian chính xác: ${escapeAttr(iso)}">${timestamp}</time></div><div class="card-divider"></div><div class="reaction-row">${reactButtons}<button class="react-more" data-action="who-reacted" data-media-id="${escapeAttr(item.id)}" aria-label="Xem mọi cảm xúc" title="Ai đã thả cảm xúc?">⋯</button><button class="card-react-prompt" data-action="who-reacted" data-media-id="${escapeAttr(item.id)}" title="Xem các cảm xúc">ai thả?</button></div></div>
+      <div class="media-card-body">${item.media_type === 'video' ? `<button class="video-download-button" type="button" data-action="download-video" data-media-id="${escapeAttr(item.id)}" ${item.url ? '' : 'disabled'}><span aria-hidden="true">⇩</span> Tải video về máy</button>` : ''}${caption}<div class="media-meta">${avatarHTML(owner)}<span class="media-owner-name" data-action="view-profile" data-user-id="${escapeAttr(item.user_id)}" role="button" tabindex="0">${escapeHTML(displayName(owner))}</span><time class="media-timestamp" datetime="${escapeAttr(iso)}" title="Thời gian chính xác: ${escapeAttr(iso)}">${timestamp}</time></div><div class="card-divider"></div><div class="reaction-row">${reactButtons}<button class="react-more" data-action="who-reacted" data-media-id="${escapeAttr(item.id)}" aria-label="Xem mọi cảm xúc" title="Ai đã thả cảm xúc?">⋯</button><button class="card-react-prompt" data-action="who-reacted" data-media-id="${escapeAttr(item.id)}" title="Xem các cảm xúc">ai thả?</button></div></div>
     </article>`;
   }
 
@@ -450,17 +458,25 @@
     const firstInput = modal.querySelector('input:not([type=hidden]):not([type=file]),textarea,button:not(.modal-close)');
     if (firstInput) window.setTimeout(() => firstInput.focus({ preventScroll: true }), 80);
   }
-  function closeModals() {
+  function closeModals(force = false) {
+    if (isTrimming && !force) { toast('Đang cắt video, đừng đóng trang cho tới khi hoàn tất nhé.', 'info', 3000); return; }
     $$('.modal-backdrop,.confirm-backdrop').forEach(modal => modal.classList.add('hidden'));
     document.body.style.overflow = '';
     pendingDeleteMediaId = null;
+    if (cropObjectUrl) { URL.revokeObjectURL(cropObjectUrl); cropObjectUrl = null; }
+    cropImage = null;
+    const trimVideo = $('#trimPreviewVideo');
+    if (trimVideo) { trimVideo.pause(); trimVideo.removeAttribute('src'); trimVideo.load(); }
+    if (trimObjectUrl) { URL.revokeObjectURL(trimObjectUrl); trimObjectUrl = null; }
   }
   function openUpload(type = 'photo') {
     if (!currentUser) return toast('Đăng nhập để lưu kỷ niệm cùng A5 nhé.', 'info');
     setUploadType(type);
-    selectedUploadFiles = [];
+    selectedUploadFiles = []; activeCropIndex = 0; activeTrimIndex = 0;
     $('#mediaFiles').value = '';
     $('#selectedFiles').textContent = 'Chưa chọn tệp nào';
+    if ($('#cropStatus')) { $('#cropStatus').dataset.custom = ''; $('#cropStatus').textContent = 'Ảnh gốc được giữ nguyên cho tới khi cậu áp dụng phần cắt.'; }
+    updateMediaTools();
     $('#uploadCaption').value = '';
     $('#uploadNoteColor').value = '#b64f73';
     $('#uploadNoteFont').value = 'Nunito';
@@ -479,6 +495,7 @@
     $('#uploadModalSubtitle').textContent = isVideo ? 'Một đoạn video nhỏ cũng đủ làm cả lớp nhớ mãi.' : 'Mỗi kỷ niệm là một mảnh ghép của A5.';
     $$('.upload-type').forEach(button => button.classList.toggle('active', button.dataset.uploadType === currentUploadType));
     updateSelectedFileLabel();
+    updateMediaTools();
   }
   function validateSelectedFiles(files, type) {
     const allowed = type === 'video' ? VIDEO_TYPES : PHOTO_TYPES;
@@ -492,9 +509,295 @@
   }
   function updateSelectedFileLabel() {
     const element = $('#selectedFiles');
-    if (!selectedUploadFiles.length) { element.textContent = 'Chưa chọn tệp nào'; return; }
+    if (!selectedUploadFiles.length) { element.textContent = 'Chưa chọn tệp nào'; updateMediaTools(); return; }
     if (selectedUploadFiles.length === 1) element.textContent = `${selectedUploadFiles[0].name} · ${humanBytes(selectedUploadFiles[0].size)}`;
     else element.textContent = `Đã chọn ${selectedUploadFiles.length} tệp · ${humanBytes(selectedUploadFiles.reduce((sum, file) => sum + file.size, 0))}`;
+    updateMediaTools();
+  }
+
+  function fileSelectOptions(type, selectedIndex = 0) {
+    const files = selectedUploadFiles;
+    return files.map((file, index) => `<option value="${index}" ${index === selectedIndex ? 'selected' : ''}>${escapeHTML(file.name)} · ${humanBytes(file.size)}</option>`).join('');
+  }
+  function updateMediaTools() {
+    const photos = currentUploadType === 'photo' ? selectedUploadFiles : [];
+    const videos = currentUploadType === 'video' ? selectedUploadFiles : [];
+    $('#photoTools')?.classList.toggle('hidden', !photos.length);
+    $('#videoTools')?.classList.toggle('hidden', !videos.length);
+    if (photos.length) {
+      const select = $('#cropTargetSelect');
+      const keep = Math.min(Number(select?.value || activeCropIndex), photos.length - 1);
+      activeCropIndex = Math.max(0, keep);
+      select.innerHTML = fileSelectOptions('photo', activeCropIndex);
+      const cropStatus = $('#cropStatus');
+      if (cropStatus && !cropStatus.dataset.custom) cropStatus.textContent = 'Ảnh gốc được giữ nguyên cho tới khi cậu áp dụng phần cắt.';
+    }
+    if (videos.length) {
+      const select = $('#trimTargetSelect');
+      const keep = Math.min(Number(select?.value || activeTrimIndex), videos.length - 1);
+      activeTrimIndex = Math.max(0, keep);
+      select.innerHTML = fileSelectOptions('video', activeTrimIndex);
+    }
+  }
+
+  function aspectRatioForCrop() {
+    const choice = $('#cropAspectSelect')?.value || '1';
+    if (choice === 'original' && cropImage) return cropImage.naturalWidth / cropImage.naturalHeight;
+    return Number(choice) || 1;
+  }
+  function resetCropOffsets() {
+    if (!cropImage) return;
+    const base = Math.max(cropView.width / cropImage.naturalWidth, cropView.height / cropImage.naturalHeight);
+    cropView.scale = base * cropView.zoom;
+    cropView.displayWidth = cropImage.naturalWidth * cropView.scale;
+    cropView.displayHeight = cropImage.naturalHeight * cropView.scale;
+    cropView.x = (cropView.width - cropView.displayWidth) / 2;
+    cropView.y = (cropView.height - cropView.displayHeight) / 2;
+    cropView.x = Math.min(0, Math.max(cropView.width - cropView.displayWidth, cropView.x));
+    cropView.y = Math.min(0, Math.max(cropView.height - cropView.displayHeight, cropView.y));
+  }
+  function resetCropViewport() {
+    if (!cropImage) return;
+    const canvas = $('#imageCropCanvas');
+    cropView.width = 800;
+    cropView.height = Math.max(240, Math.round(800 / aspectRatioForCrop()));
+    canvas.width = cropView.width; canvas.height = cropView.height;
+    cropView.zoom = Number($('#cropZoom').value) || 1;
+    $('#cropZoomValue').textContent = `${Math.round(cropView.zoom * 100)}%`;
+    resetCropOffsets(); drawCropPreview();
+  }
+  function drawCropPreview() {
+    if (!cropImage) return;
+    const canvas = $('#imageCropCanvas');
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#f8e7ed'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(cropImage, cropView.x, cropView.y, cropView.displayWidth, cropView.displayHeight);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,.96)'; ctx.lineWidth = 3;
+    ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
+    ctx.strokeStyle = 'rgba(120,70,94,.45)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 1; i < 3; i++) { const x = canvas.width * i / 3; const y = canvas.height * i / 3; ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); }
+    ctx.stroke(); ctx.restore();
+  }
+  function openImageCropper() {
+    if (currentUploadType !== 'photo' || !selectedUploadFiles.length) return toast('Cậu chọn ảnh trước nhé.', 'info');
+    activeCropIndex = Math.max(0, Math.min(Number($('#cropTargetSelect').value) || 0, selectedUploadFiles.length - 1));
+    const file = selectedUploadFiles[activeCropIndex];
+    if (!file || !file.type.startsWith('image/')) return toast('Tệp đã chọn không phải ảnh.', 'error');
+    if (cropObjectUrl) URL.revokeObjectURL(cropObjectUrl);
+    cropObjectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      cropImage = image;
+      $('#cropFilename').textContent = `${file.name} · kéo ảnh để căn khung`;
+      $('#cropAspectSelect').value = '1'; $('#cropZoom').value = '1';
+      cropView.zoom = 1; resetCropViewport(); openModal('imageCropModal');
+    };
+    image.onerror = () => { if (cropObjectUrl) URL.revokeObjectURL(cropObjectUrl); cropObjectUrl = null; toast('Không mở được ảnh này để cắt.', 'error'); };
+    image.src = cropObjectUrl;
+  }
+  function startCropDrag(event) {
+    if (!cropImage) return;
+    cropView.dragging = true; cropView.pointerX = event.clientX; cropView.pointerY = event.clientY;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+  function moveCropDrag(event) {
+    if (!cropView.dragging || !cropImage) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const factorX = cropView.width / Math.max(1, rect.width);
+    const factorY = cropView.height / Math.max(1, rect.height);
+    cropView.x += (event.clientX - cropView.pointerX) * factorX;
+    cropView.y += (event.clientY - cropView.pointerY) * factorY;
+    cropView.pointerX = event.clientX; cropView.pointerY = event.clientY;
+    cropView.x = Math.min(0, Math.max(cropView.width - cropView.displayWidth, cropView.x));
+    cropView.y = Math.min(0, Math.max(cropView.height - cropView.displayHeight, cropView.y));
+    drawCropPreview();
+  }
+  function endCropDrag() { cropView.dragging = false; }
+  async function applyImageCrop() {
+    if (!cropImage || !selectedUploadFiles[activeCropIndex]) return;
+    const button = $('#applyCropButton');
+    button.disabled = true;
+    try {
+      const scale = cropView.scale;
+      const sx = Math.max(0, -cropView.x / scale);
+      const sy = Math.max(0, -cropView.y / scale);
+      const sw = Math.min(cropImage.naturalWidth - sx, cropView.width / scale);
+      const sh = Math.min(cropImage.naturalHeight - sy, cropView.height / scale);
+      const out = document.createElement('canvas');
+      out.width = Math.max(1, Math.round(sw)); out.height = Math.max(1, Math.round(sh));
+      const ctx = out.getContext('2d', { alpha: false });
+      ctx.drawImage(cropImage, sx, sy, sw, sh, 0, 0, out.width, out.height);
+      const original = selectedUploadFiles[activeCropIndex];
+      const mime = original.type === 'image/png' ? 'image/png' : 'image/jpeg';
+      const downscale = Math.min(1, 4096 / Math.max(sw, sh));
+      if (downscale < 1) { out.width = Math.max(1, Math.round(sw * downscale)); out.height = Math.max(1, Math.round(sh * downscale)); ctx.drawImage(cropImage, sx, sy, sw, sh, 0, 0, out.width, out.height); }
+      const blob = await new Promise((resolve, reject) => out.toBlob(result => result ? resolve(result) : reject(new Error('Trình duyệt chưa xuất được ảnh đã cắt.')), mime, 0.93));
+      const stem = original.name.replace(/\.[^.]+$/, '') || 'a5-memory';
+      selectedUploadFiles[activeCropIndex] = new File([blob], `${stem}-cropped.${mime === 'image/png' ? 'png' : 'jpg'}`, { type: mime, lastModified: Date.now() });
+      $('#cropStatus').dataset.custom = '1';
+      $('#cropStatus').textContent = `Đã cắt: ${selectedUploadFiles[activeCropIndex].name}`;
+      $('#mediaFiles').value = '';
+      updateSelectedFileLabel();
+      closeModals();
+      toast('Đã áp dụng khung cắt cho ảnh ♡', 'success');
+    } catch (error) {
+      console.error('Image crop failed:', error); toast(error.message || 'Chưa cắt được ảnh này.', 'error', 5000);
+    } finally { button.disabled = false; }
+  }
+
+  function fmtTrimTime(seconds) {
+    const value = Math.max(0, Number(seconds) || 0);
+    const min = Math.floor(value / 60);
+    const sec = value - min * 60;
+    return `${String(min).padStart(2, '0')}:${sec.toFixed(1).padStart(4, '0')}`;
+  }
+  function updateTrimLabels() {
+    const start = Number($('#trimStartRange').value) || 0;
+    const end = Number($('#trimEndRange').value) || 0;
+    $('#trimStartLabel').textContent = fmtTrimTime(start);
+    $('#trimEndLabel').textContent = fmtTrimTime(end);
+    $('#trimLengthLabel').textContent = fmtTrimTime(Math.max(0, end - start));
+    $('#applyTrimButton').disabled = isTrimming || !trimDuration || end - start < 0.2;
+  }
+  function updateTrimRange(which, value) {
+    const start = $('#trimStartRange'), end = $('#trimEndRange');
+    const minimumGap = 0.2;
+    if (which === 'start') {
+      const v = Math.max(0, Math.min(value, Number(end.value) - minimumGap)); start.value = String(v);
+    } else {
+      const v = Math.min(trimDuration, Math.max(value, Number(start.value) + minimumGap)); end.value = String(v);
+    }
+    const video = $('#trimPreviewVideo');
+    if (video && !video.paused) video.pause();
+    updateTrimLabels();
+  }
+  function openVideoTrimmer() {
+    if (currentUploadType !== 'video' || !selectedUploadFiles.length) return toast('Cậu chọn video trước nhé.', 'info');
+    activeTrimIndex = Math.max(0, Math.min(Number($('#trimTargetSelect').value) || 0, selectedUploadFiles.length - 1));
+    const file = selectedUploadFiles[activeTrimIndex];
+    if (trimObjectUrl) URL.revokeObjectURL(trimObjectUrl);
+    trimObjectUrl = URL.createObjectURL(file);
+    const video = $('#trimPreviewVideo');
+    video.src = trimObjectUrl; video.load();
+    $('#trimFilename').textContent = `${file.name} · chọn điểm bắt đầu và kết thúc`;
+    $('#trimStatus').textContent = 'Đoạn cắt sẽ được xuất thành video mới; tệp gốc vẫn được giữ nếu cậu hủy.';
+    $('#applyTrimButton').disabled = true;
+    video.onloadedmetadata = () => {
+      trimDuration = Number.isFinite(video.duration) ? video.duration : 0;
+      $('#trimStartRange').min = '0'; $('#trimStartRange').max = String(trimDuration);
+      $('#trimStartRange').step = '0.1'; $('#trimStartRange').value = '0';
+      $('#trimEndRange').min = '0.2'; $('#trimEndRange').max = String(trimDuration);
+      $('#trimEndRange').step = '0.1'; $('#trimEndRange').value = String(trimDuration);
+      updateTrimLabels();
+    };
+    video.onerror = () => { $('#trimStatus').textContent = 'Không xem trước được video này trong trình duyệt. Thử đổi sang MP4 hoặc WebM.'; };
+    openModal('videoTrimModal');
+  }
+  async function applyVideoTrim() {
+    if (isTrimming || !selectedUploadFiles[activeTrimIndex]) return;
+    const video = $('#trimPreviewVideo');
+    const start = Number($('#trimStartRange').value) || 0;
+    const end = Number($('#trimEndRange').value) || 0;
+    if (end - start < 0.2) return toast('Đoạn video cần dài ít nhất 0,2 giây.', 'error');
+    const capture = video.captureStream || video.mozCaptureStream;
+    if (!capture || !window.MediaRecorder) {
+      $('#trimStatus').textContent = 'Trình duyệt này không hỗ trợ cắt video trực tiếp. Hãy thử Chrome hoặc Edge mới nhất.';
+      return toast('Trình duyệt chưa hỗ trợ cắt video trực tiếp. Hãy dùng Chrome hoặc Edge nhé.', 'error', 6000);
+    }
+    const mimeCandidates = ['video/mp4;codecs="avc1.42E01E,mp4a.40.2"', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    const mimeType = typeof MediaRecorder.isTypeSupported === 'function' ? (mimeCandidates.find(type => MediaRecorder.isTypeSupported(type)) || '') : '';
+    if (!mimeType && typeof MediaRecorder.isTypeSupported === 'function') return toast('Trình duyệt không có định dạng ghi video phù hợp.', 'error');
+    isTrimming = true;
+    const applyButton = $('#applyTrimButton');
+    const closeButton = $('#videoTrimModal [data-action="close-modal"]');
+    applyButton.disabled = true; closeButton.disabled = true;
+    $('#trimStatus').textContent = `Đang xử lý đoạn ${fmtTrimTime(start)} – ${fmtTrimTime(end)} theo thời gian thực. Đừng đóng hoặc chuyển tab...`;
+    video.controls = false;
+    let stream = null;
+    try {
+      stream = capture.call(video);
+      const options = { videoBitsPerSecond: 4_000_000, audioBitsPerSecond: 128_000 };
+      if (mimeType) options.mimeType = mimeType;
+      const recorder = new MediaRecorder(stream, options);
+      const chunks = [];
+      const result = new Promise((resolve, reject) => {
+        let finished = false;
+        const finish = error => {
+          if (finished) return; finished = true;
+          clearTimeout(watchdog); video.removeEventListener('timeupdate', onTimeUpdate);
+          try { video.pause(); } catch (_) {}
+          if (stream) stream.getTracks().forEach(track => track.stop());
+          if (error) reject(error);
+          else {
+            const type = recorder.mimeType || mimeType || 'video/webm';
+            resolve(new Blob(chunks, { type: type.split(';')[0] }));
+          }
+        };
+        const onTimeUpdate = () => { if (video.currentTime >= end || video.ended) { if (recorder.state !== 'inactive') recorder.stop(); } };
+        const watchdog = setTimeout(() => { if (recorder.state !== 'inactive') recorder.stop(); finish(new Error('Đã hết thời gian xử lý. Hãy thử một đoạn ngắn hơn.')); }, Math.max(15000, (end - start + 12) * 1000));
+        recorder.addEventListener('dataavailable', event => { if (event.data?.size) chunks.push(event.data); });
+        recorder.addEventListener('error', () => finish(new Error('Trình duyệt gặp lỗi khi ghi lại đoạn video.')));
+        recorder.addEventListener('stop', () => finish());
+        video.addEventListener('timeupdate', onTimeUpdate);
+        video.currentTime = start;
+        recorder.start(250);
+        const playPromise = video.play();
+        if (playPromise?.catch) playPromise.catch(() => { if (recorder.state !== 'inactive') recorder.stop(); finish(new Error('Không thể phát video để cắt. Hãy bấm phát thử video trước rồi thử lại.')); });
+      });
+      const blob = await result;
+      if (!blob.size) throw new Error('Đoạn video xuất ra đang trống. Hãy thử chọn đoạn khác.');
+      const original = selectedUploadFiles[activeTrimIndex];
+      const mime = blob.type.startsWith('video/mp4') ? 'video/mp4' : 'video/webm';
+      const extension = mime === 'video/mp4' ? 'mp4' : 'webm';
+      const stem = original.name.replace(/\.[^.]+$/, '') || 'a5-memory';
+      const trimmedFile = new File([blob], `${stem}-cut.${extension}`, { type: mime, lastModified: Date.now() });
+      if (trimmedFile.size > VIDEO_MAX) throw new Error(`Đoạn cắt mới nặng ${humanBytes(trimmedFile.size)}, vượt giới hạn ${humanBytes(VIDEO_MAX)}. Hãy chọn đoạn ngắn hơn.`);
+      selectedUploadFiles[activeTrimIndex] = trimmedFile;
+      $('#mediaFiles').value = '';
+      updateSelectedFileLabel();
+      closeModals(true);
+      toast(`Đã cắt xong video (${humanBytes(trimmedFile.size)}) ♡`, 'success', 4500);
+    } catch (error) {
+      console.error('Video trim failed:', error);
+      $('#trimStatus').textContent = error.message || 'Chưa cắt được video này.';
+      toast(error.message || 'Chưa cắt được video này.', 'error', 6500);
+    } finally {
+      if (stream) stream.getTracks().forEach(track => track.stop());
+      isTrimming = false; video.controls = true; applyButton.disabled = false; closeButton.disabled = false; updateTrimLabels();
+    }
+  }
+
+  async function downloadVideo(mediaId, button) {
+    const item = mediaItems.find(entry => entry.id === mediaId && entry.media_type === 'video');
+    if (!item?.storage_path || !supabase) return toast('Chưa có đường dẫn tải video. Hãy tải lại album.', 'error');
+    const originalHtml = button.innerHTML;
+    button.disabled = true; button.innerHTML = '<span aria-hidden="true">…</span> Đang chuẩn bị';
+    const when = new Date(item.created_at);
+    const dateStamp = Number.isNaN(when.getTime()) ? 'ky-niem' : `${when.getFullYear()}-${String(when.getMonth()+1).padStart(2,'0')}-${String(when.getDate()).padStart(2,'0')}`;
+    const rawExtension = (item.storage_path || '').split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const extension = ['mp4', 'webm', 'mov', 'm4v'].includes(rawExtension) ? rawExtension : 'mp4';
+    const filename = `A5-ky-niem-${dateStamp}.${extension}`;
+    try {
+      // Supabase adds Content-Disposition: attachment to this short-lived signed URL.
+      // This avoids downloading a potentially large video into JS memory first.
+      const { data, error } = await supabase.storage.from(MEDIA_BUCKET).createSignedUrl(item.storage_path, 60, { download: filename });
+      if (error) throw error;
+      if (!data?.signedUrl) throw new Error('Không tạo được liên kết tải tạm thời.');
+      const anchor = document.createElement('a');
+      anchor.href = data.signedUrl; anchor.download = filename; anchor.rel = 'noopener';
+      anchor.style.display = 'none'; document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      toast('Đã bắt đầu tải video về máy ♡', 'success');
+    } catch (error) {
+      console.error('Video download failed:', error);
+      if (item.url) {
+        const anchor = document.createElement('a'); anchor.href = item.url; anchor.download = filename; anchor.target = '_blank'; anchor.rel = 'noopener noreferrer';
+        document.body.appendChild(anchor); anchor.click(); anchor.remove();
+        toast('Đã mở liên kết video. Nếu trình duyệt không tự tải, dùng menu của trình phát để lưu video.', 'info', 6000);
+      } else toast('Chưa tải được video. Hãy thử tải lại album rồi bấm lại nhé.', 'error', 5500);
+    } finally { button.disabled = false; button.innerHTML = originalHtml; }
   }
 
   async function uploadSelectedFiles(event) {
@@ -720,6 +1023,21 @@
     $('#topAvatarButton')?.addEventListener('click', () => switchTab('profile'));
     $('#topUploadButton')?.addEventListener('click', () => openUpload('photo'));
     $('#uploadForm')?.addEventListener('submit', uploadSelectedFiles);
+    $('#openCropButton')?.addEventListener('click', openImageCropper);
+    $('#applyCropButton')?.addEventListener('click', applyImageCrop);
+    $('#cropTargetSelect')?.addEventListener('change', event => { activeCropIndex = Number(event.target.value) || 0; });
+    $('#cropAspectSelect')?.addEventListener('change', resetCropViewport);
+    $('#cropZoom')?.addEventListener('input', event => { cropView.zoom = Number(event.target.value) || 1; $('#cropZoomValue').textContent = `${Math.round(cropView.zoom * 100)}%`; resetCropOffsets(); drawCropPreview(); });
+    $('#imageCropCanvas')?.addEventListener('pointerdown', startCropDrag);
+    $('#imageCropCanvas')?.addEventListener('pointermove', moveCropDrag);
+    $('#imageCropCanvas')?.addEventListener('pointerup', endCropDrag);
+    $('#imageCropCanvas')?.addEventListener('pointercancel', endCropDrag);
+    $('#imageCropCanvas')?.addEventListener('pointerleave', endCropDrag);
+    $('#openTrimButton')?.addEventListener('click', openVideoTrimmer);
+    $('#trimTargetSelect')?.addEventListener('change', event => { activeTrimIndex = Number(event.target.value) || 0; });
+    $('#trimStartRange')?.addEventListener('input', event => updateTrimRange('start', Number(event.target.value)));
+    $('#trimEndRange')?.addEventListener('input', event => updateTrimRange('end', Number(event.target.value)));
+    $('#applyTrimButton')?.addEventListener('click', applyVideoTrim);
     $('#profileForm')?.addEventListener('submit', saveProfile);
     $('#editMediaForm')?.addEventListener('submit', saveMediaEdit);
     $('#confirmDeleteButton')?.addEventListener('click', confirmDeleteMedia);
@@ -728,6 +1046,8 @@
       selectedUploadFiles = [...(event.target.files || [])];
       const validation = validateSelectedFiles(selectedUploadFiles, currentUploadType);
       if (validation) { toast(validation, 'error', 5000); selectedUploadFiles = []; event.target.value = ''; }
+      activeCropIndex = 0; activeTrimIndex = 0;
+      if ($('#cropStatus')) { $('#cropStatus').dataset.custom = ''; $('#cropStatus').textContent = 'Ảnh gốc được giữ nguyên cho tới khi cậu áp dụng phần cắt.'; }
       updateSelectedFileLabel();
     });
     $('#avatarFile')?.addEventListener('change', event => {
@@ -752,7 +1072,9 @@
       const files = [...(event.dataTransfer?.files || [])];
       const validation = validateSelectedFiles(files, currentUploadType);
       if (validation) return toast(validation, 'error', 5000);
-      selectedUploadFiles = files; updateSelectedFileLabel();
+      selectedUploadFiles = files; activeCropIndex = 0; activeTrimIndex = 0;
+      if ($('#cropStatus')) { $('#cropStatus').dataset.custom = ''; $('#cropStatus').textContent = 'Ảnh gốc được giữ nguyên cho tới khi cậu áp dụng phần cắt.'; }
+      updateSelectedFileLabel();
     });
     document.addEventListener('click', async event => {
       const tab = event.target.closest('[data-tab]');
@@ -774,6 +1096,7 @@
       else if (action === 'delete-media') askDeleteMedia(actionButton.dataset.mediaId);
       else if (action === 'toggle-reaction') await toggleReaction(actionButton.dataset.mediaId, actionButton.dataset.emoji);
       else if (action === 'who-reacted') openReactions(actionButton.dataset.mediaId, actionButton.dataset.emoji || '');
+      else if (action === 'download-video') await downloadVideo(actionButton.dataset.mediaId, actionButton);
       else if (action === 'view-profile') openPublicProfile(actionButton.dataset.userId);
       else if (action === 'link-google') await linkProvider('google');
       else if (action === 'link-facebook') await linkProvider('facebook');
