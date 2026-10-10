@@ -1,0 +1,795 @@
+/* NƠI LƯU GIỮ THANH XUÂN A5 — frontend powered by Supabase */
+(() => {
+  'use strict';
+
+  const $ = (selector, root = document) => root.querySelector(selector);
+  const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+  const REACTIONS = ['🩷', '😂', '🥹', '✨', '🫶'];
+  const FONT_ALLOWLIST = ['Nunito', 'Patrick Hand', 'Playfair Display', 'DM Sans'];
+  const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'];
+  const VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v'];
+  const PHOTO_MAX = 15 * 1024 * 1024;
+  const VIDEO_MAX = 50 * 1024 * 1024;
+  const AVATAR_MAX = 5 * 1024 * 1024;
+  const MEDIA_BUCKET = 'memory-media';
+  const AVATAR_BUCKET = 'profile-avatars';
+
+  let supabase = null;
+  let currentUser = null;
+  let currentProfile = null;
+  let profiles = [];
+  let mediaItems = [];
+  let reactionItems = [];
+  let signedUrlCache = new Map();
+  let activeTab = 'home';
+  let homeFilter = 'all';
+  let galleryFilter = 'all';
+  let searchTerm = '';
+  let currentUploadType = 'photo';
+  let selectedUploadFiles = [];
+  let selectedAvatarFile = null;
+  let pendingDeleteMediaId = null;
+  let lastUserId = null;
+  let pageLoadToken = 0;
+  let isUploading = false;
+
+  function escapeHTML(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+  }
+  function escapeAttr(value) { return escapeHTML(value).replace(/`/g, '&#96;'); }
+  function safeColor(value) { return /^#[0-9a-fA-F]{6}$/.test(String(value)) ? value : '#b64f73'; }
+  function safeFont(value) { return FONT_ALLOWLIST.includes(value) ? value : 'Nunito'; }
+  function shortInitial(name) { const text = String(name || 'A5').trim(); return escapeHTML(text ? [...text][0].toUpperCase() : 'A'); }
+  function displayName(profile) { return profile?.display_name || profile?.nickname || 'Bạn A5'; }
+  function humanBytes(bytes) {
+    if (!Number.isFinite(bytes)) return '';
+    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  function formatDate(value, withSeconds = true) {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString('vi-VN', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', ...(withSeconds ? { second: '2-digit' } : {}), hour12: false
+    });
+  }
+  function formatMonth(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleDateString('vi-VN', { month: '2-digit', year: 'numeric' });
+  }
+  function safeFileName(name) {
+    return String(name || 'memory-file').normalize('NFC').replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, '').slice(-90) || 'memory-file';
+  }
+  function uniqueId() {
+    return (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function')
+      ? globalThis.crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+  function toast(message, type = 'success', duration = 3300) {
+    const region = $('#toastRegion');
+    if (!region) return;
+    const node = document.createElement('div');
+    node.className = `toast ${type}`;
+    node.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    node.textContent = message;
+    region.appendChild(node);
+    window.setTimeout(() => { node.style.opacity = '0'; node.style.transform = 'translateX(12px)'; window.setTimeout(() => node.remove(), 240); }, duration);
+  }
+  function isConfigured() {
+    const config = window.A5_CONFIG || {};
+    return Boolean(config.SUPABASE_URL && config.SUPABASE_ANON_KEY &&
+      !String(config.SUPABASE_URL).includes('YOUR_SUPABASE') &&
+      !String(config.SUPABASE_ANON_KEY).includes('YOUR_SUPABASE'));
+  }
+  function showAuthScreen() {
+    $('#appShell').classList.add('hidden');
+    $('#authScreen').classList.remove('hidden');
+    if (!isConfigured() || !window.supabase?.createClient) {
+      $('#setupNotice').classList.remove('hidden');
+      $('#authHint').textContent = !isConfigured()
+        ? 'Hoàn tất phần kết nối ở README để bật đăng nhập và lưu trữ.'
+        : 'Chưa tải được thư viện kết nối. Kiểm tra kết nối mạng rồi tải lại trang nhé.';
+    } else {
+      $('#setupNotice').classList.add('hidden');
+      $('#authHint').textContent = 'Tài khoản của cậu sẽ có một góc riêng để quản lý bài đăng.';
+    }
+  }
+  function showAppShell() {
+    $('#authScreen').classList.add('hidden');
+    $('#appShell').classList.remove('hidden');
+  }
+
+  async function initialize() {
+    window.setTimeout(() => $('#splash')?.classList.add('done'), 700);
+    bindEvents();
+    if (!isConfigured() || !window.supabase?.createClient) {
+      showAuthScreen();
+      return;
+    }
+    const cfg = window.A5_CONFIG;
+    try {
+      supabase = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+      });
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      if (data?.session) await handleSession(data.session);
+      else showAuthScreen();
+      supabase.auth.onAuthStateChange((event, session) => {
+        // Defer application calls so the auth callback cannot hold the auth lock.
+        window.setTimeout(() => {
+          if (event === 'SIGNED_OUT') {
+            currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; lastUserId = null;
+            showAuthScreen();
+          } else if (session?.user) {
+            handleSession(session).catch(error => {
+              console.error('Auth session handling error:', error);
+              toast('Chưa tải được góc lưu bút. Cậu thử tải lại trang nhé.', 'error');
+            });
+          }
+        }, 0);
+      });
+    } catch (error) {
+      console.error('Supabase initialization error:', error);
+      showAuthScreen();
+      toast('Không kết nối được backend. Hãy kiểm tra URL và anon key trong config.js.', 'error', 6000);
+    }
+  }
+
+  async function signIn(provider) {
+    if (!isConfigured() || !supabase) {
+      $('#setupNotice')?.classList.remove('hidden');
+      toast('Cậu cần kết nối Supabase trước khi đăng nhập.', 'info', 4800);
+      return;
+    }
+    const buttons = [$('#googleLogin'), $('#facebookLogin')];
+    buttons.forEach(button => { if (button) button.disabled = true; });
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: `${window.location.origin}${window.location.pathname}` }
+      });
+      if (error) throw error;
+    } catch (error) {
+      console.error('OAuth sign-in failed:', error);
+      toast(`${provider === 'google' ? 'Google' : 'Facebook'} chưa đăng nhập được. Kiểm tra cấu hình OAuth trong Supabase.`, 'error', 5000);
+      buttons.forEach(button => { if (button) button.disabled = false; });
+    }
+  }
+
+  async function handleSession(session) {
+    if (!session?.user) { showAuthScreen(); return; }
+    const sameUser = lastUserId === session.user.id && !$('#appShell').classList.contains('hidden');
+    currentUser = session.user;
+    showAppShell();
+    if (sameUser) {
+      await syncLinkedProviders();
+      renderProfile();
+      return;
+    }
+    lastUserId = session.user.id;
+    await loadData(true);
+    await syncLinkedProviders();
+    renderAll();
+  }
+
+  async function signOut() {
+    if (!supabase) return;
+    const button = $('#logoutButton');
+    if (button) button.disabled = true;
+    const { error } = await supabase.auth.signOut();
+    if (button) button.disabled = false;
+    if (error) { console.error(error); toast('Chưa đăng xuất được. Thử lại nhé.', 'error'); return; }
+    currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; lastUserId = null;
+    signedUrlCache.clear(); showAuthScreen(); toast('Hẹn gặp cậu ở cuốn lưu bút nhé ♡', 'success');
+  }
+
+  async function resolveSignedUrl(bucket, path) {
+    if (!path || !supabase) return '';
+    const key = `${bucket}:${path}`;
+    const cached = signedUrlCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.url;
+    try {
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 86400);
+      if (error) throw error;
+      const url = data?.signedUrl || '';
+      signedUrlCache.set(key, { url, expiresAt: Date.now() + 22 * 60 * 60 * 1000 });
+      return url;
+    } catch (error) {
+      console.warn(`Could not sign ${bucket} path`, error);
+      return '';
+    }
+  }
+
+  async function loadData(showLoading = false) {
+    if (!supabase || !currentUser) return;
+    const token = ++pageLoadToken;
+    if (showLoading) {
+      $('#homeMediaGrid').innerHTML = loadingCard('Đang tìm lại những kỷ niệm...');
+      $('#galleryMediaGrid').innerHTML = loadingCard('Đang xếp album...');
+      $('#peopleGrid').innerHTML = loadingCard('Đang gọi tên những người bạn...');
+    }
+    try {
+      const [profileResult, mediaResult] = await Promise.all([
+        supabase.from('profiles').select('id,display_name,nickname,bio,avatar_path,linked_providers,created_at,updated_at').order('created_at', { ascending: true }),
+        supabase.from('media_items').select('id,user_id,media_type,storage_path,caption,note_color,note_font,created_at,updated_at,profiles(id,display_name,nickname,bio,avatar_path,linked_providers,created_at)').order('created_at', { ascending: false }).limit(200)
+      ]);
+      if (profileResult.error) throw profileResult.error;
+      if (mediaResult.error) throw mediaResult.error;
+      const rawProfiles = profileResult.data || [];
+      const profileResolved = await Promise.all(rawProfiles.map(async profile => ({
+        ...profile, avatar_url: await resolveSignedUrl(AVATAR_BUCKET, profile.avatar_path)
+      })));
+      if (token !== pageLoadToken) return;
+      profiles = profileResolved;
+      currentProfile = profiles.find(profile => profile.id === currentUser.id) || null;
+      if (!currentProfile) {
+        // A profile trigger should create this row; reload once in case the auth trigger was still running.
+        await ensureOwnProfile();
+        const retry = await supabase.from('profiles').select('id,display_name,nickname,bio,avatar_path,linked_providers,created_at,updated_at').eq('id', currentUser.id).maybeSingle();
+        if (retry.data) {
+          const resolved = { ...retry.data, avatar_url: await resolveSignedUrl(AVATAR_BUCKET, retry.data.avatar_path) };
+          profiles = [...profiles.filter(p => p.id !== resolved.id), resolved]; currentProfile = resolved;
+        }
+      }
+      const rawMedia = mediaResult.data || [];
+      mediaItems = await Promise.all(rawMedia.map(async item => {
+        const owner = profiles.find(profile => profile.id === item.user_id) || item.profiles || null;
+        const mediaUrl = await resolveSignedUrl(MEDIA_BUCKET, item.storage_path);
+        return { ...item, url: mediaUrl, profiles: owner };
+      }));
+      if (token !== pageLoadToken) return;
+      await loadReactions();
+      renderAll();
+      if (!currentProfile) toast('Chưa tải được hồ sơ tài khoản. Hãy kiểm tra lại schema SQL trong Supabase.', 'error', 6000);
+    } catch (error) {
+      console.error('loadData failed:', error);
+      const message = error?.message || 'Không rõ nguyên nhân';
+      $('#homeMediaGrid').innerHTML = errorCard('Không tải được album', 'Kiểm tra schema SQL, quyền truy cập và kết nối Supabase.');
+      $('#galleryMediaGrid').innerHTML = errorCard('Album chưa sẵn sàng', 'Hãy kiểm tra thiết lập backend theo README.');
+      $('#peopleGrid').innerHTML = errorCard('Chưa tải được thành viên', 'Hãy kiểm tra thiết lập backend theo README.');
+      toast(`Tải dữ liệu thất bại: ${message.slice(0, 95)}`, 'error', 6500);
+    }
+  }
+
+  async function ensureOwnProfile() {
+    if (!currentUser || !supabase) return;
+    const meta = currentUser.user_metadata || {};
+    const name = String(meta.full_name || meta.name || currentUser.email?.split('@')[0] || 'Bạn A5').slice(0, 40);
+    const { error } = await supabase.from('profiles').upsert({
+      id: currentUser.id, display_name: name, nickname: '', bio: '', linked_providers: linkedProviders(currentUser)
+    }, { onConflict: 'id', ignoreDuplicates: true });
+    if (error) console.warn('Profile bootstrap fallback did not complete:', error.message);
+  }
+
+  function linkedProviders(user = currentUser) {
+    const providers = new Set();
+    (user?.identities || []).forEach(identity => { if (identity?.provider) providers.add(identity.provider); });
+    if (user?.app_metadata?.provider) providers.add(user.app_metadata.provider);
+    (user?.app_metadata?.providers || []).forEach(provider => providers.add(provider));
+    return [...providers].filter(provider => ['google', 'facebook', 'email', 'apple', 'github'].includes(provider));
+  }
+
+  async function syncLinkedProviders() {
+    if (!supabase || !currentUser || !currentProfile) return;
+    const providers = linkedProviders(currentUser);
+    const existing = [...(currentProfile.linked_providers || [])].sort().join(',');
+    const incoming = [...providers].sort().join(',');
+    if (existing === incoming) return;
+    const { data, error } = await supabase.from('profiles').update({ linked_providers: providers }).eq('id', currentUser.id).select('id,display_name,nickname,bio,avatar_path,linked_providers,created_at,updated_at').maybeSingle();
+    if (error) { console.warn('Could not sync linked providers:', error.message); return; }
+    if (data) {
+      currentProfile = { ...currentProfile, ...data };
+      profiles = profiles.map(profile => profile.id === currentUser.id ? { ...profile, ...data } : profile);
+    }
+  }
+
+  async function loadReactions() {
+    if (!supabase || !currentUser) return;
+    const ids = mediaItems.map(item => item.id);
+    if (!ids.length) { reactionItems = []; return; }
+    const { data, error } = await supabase.from('reactions')
+      .select('id,media_id,user_id,emoji,created_at,profiles(id,display_name,nickname,avatar_path)')
+      .in('media_id', ids);
+    if (error) throw error;
+    reactionItems = (data || []).map(item => ({ ...item, profile: profiles.find(profile => profile.id === item.user_id) || item.profiles || null }));
+    mediaItems = mediaItems.map(item => ({ ...item, reactions: reactionItems.filter(reaction => reaction.media_id === item.id) }));
+  }
+
+  function loadingCard(text) { return `<div class="loading-card"><span class="loading-flower">✿</span><p>${escapeHTML(text)}</p></div>`; }
+  function errorCard(title, message) { return `<div class="loading-card"><span class="loading-flower">♡</span><p><strong>${escapeHTML(title)}</strong></p><p>${escapeHTML(message)}</p></div>`; }
+  function avatarHTML(profile, className = 'avatar') {
+    const url = profile?.avatar_url;
+    const label = displayName(profile);
+    return `<span class="${className}" title="${escapeAttr(label)}">${url ? `<img src="${escapeAttr(url)}" alt="Ảnh đại diện ${escapeAttr(label)}" loading="lazy"/>` : shortInitial(label)}</span>`;
+  }
+  function userReactionSet(item) {
+    const result = new Map();
+    (item.reactions || reactionItems.filter(reaction => reaction.media_id === item.id)).forEach(reaction => {
+      if (!result.has(reaction.emoji)) result.set(reaction.emoji, []);
+      result.get(reaction.emoji).push(reaction);
+    });
+    return result;
+  }
+  function renderMediaCard(item, index = 0) {
+    const owner = profiles.find(profile => profile.id === item.user_id) || item.profiles || {};
+    const own = currentUser && item.user_id === currentUser.id;
+    const reactions = userReactionSet(item);
+    const date = new Date(item.created_at);
+    const iso = Number.isNaN(date.getTime()) ? '' : date.toISOString();
+    const timestamp = escapeHTML(formatDate(item.created_at, true));
+    const mediaLabel = item.media_type === 'video' ? '▶ VIDEO' : '▧ ẢNH';
+    const media = item.url
+      ? (item.media_type === 'video'
+        ? `<video src="${escapeAttr(item.url)}" controls playsinline preload="metadata" aria-label="Video kỷ niệm của ${escapeAttr(displayName(owner))}"></video>`
+        : `<img src="${escapeAttr(item.url)}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}" loading="lazy"/>`)
+      : `<div class="media-visual-fallback">${item.media_type === 'video' ? '▷' : '✿'}</div>`;
+    const caption = item.caption ? `<p class="media-note" style="--note-color:${safeColor(item.note_color)};--note-font:'${safeFont(item.note_font)}'">${escapeHTML(item.caption)}</p>` : '';
+    const allEmojis = [...new Set([...REACTIONS, ...reactions.keys()])];
+    const reactButtons = allEmojis.map(emoji => {
+      const group = reactions.get(emoji) || [];
+      const mine = group.some(reaction => reaction.user_id === currentUser?.id);
+      return `<span class="reaction-pill ${mine ? 'mine' : ''}"><button class="reaction-emoji" data-action="toggle-reaction" data-media-id="${escapeAttr(item.id)}" data-emoji="${escapeAttr(emoji)}" aria-label="Thả ${escapeAttr(emoji)}">${escapeHTML(emoji)}</button><button class="reaction-count" data-action="who-reacted" data-media-id="${escapeAttr(item.id)}" data-emoji="${escapeAttr(emoji)}" aria-label="Xem ai đã thả ${escapeAttr(emoji)}">${group.length}</button></span>`;
+    }).join('');
+    return `<article class="memory-card" style="animation-delay:${Math.min(index * 35, 280)}ms" data-media-card="${escapeAttr(item.id)}">
+      <div class="media-visual">${media}<span class="media-type-tag">${mediaLabel}</span>${own ? `<div class="media-owner-actions"><button class="tiny-action" data-action="edit-media" data-media-id="${escapeAttr(item.id)}" aria-label="Sửa kỷ niệm" title="Chỉnh sửa">✎</button><button class="tiny-action" data-action="delete-media" data-media-id="${escapeAttr(item.id)}" aria-label="Xóa kỷ niệm" title="Xóa">⌫</button></div>` : ''}</div>
+      <div class="media-card-body">${caption}<div class="media-meta">${avatarHTML(owner)}<span class="media-owner-name" data-action="view-profile" data-user-id="${escapeAttr(item.user_id)}" role="button" tabindex="0">${escapeHTML(displayName(owner))}</span><time class="media-timestamp" datetime="${escapeAttr(iso)}" title="Thời gian chính xác: ${escapeAttr(iso)}">${timestamp}</time></div><div class="card-divider"></div><div class="reaction-row">${reactButtons}<button class="react-more" data-action="who-reacted" data-media-id="${escapeAttr(item.id)}" aria-label="Xem mọi cảm xúc" title="Ai đã thả cảm xúc?">⋯</button><button class="card-react-prompt" data-action="who-reacted" data-media-id="${escapeAttr(item.id)}" title="Xem các cảm xúc">ai thả?</button></div></div>
+    </article>`;
+  }
+
+  function searchable(item) {
+    if (!searchTerm) return true;
+    const owner = profiles.find(profile => profile.id === item.user_id) || {};
+    const haystack = [item.caption, displayName(owner), owner.nickname, owner.bio, item.media_type].join(' ').toLocaleLowerCase('vi');
+    return haystack.includes(searchTerm);
+  }
+  function renderHomeMedia() {
+    let items = mediaItems.filter(searchable);
+    if (homeFilter !== 'all') items = items.filter(item => item.media_type === homeFilter);
+    items = items.slice(0, 6);
+    $('#homeMediaGrid').innerHTML = items.length ? items.map(renderMediaCard).join('') : '';
+    $('#homeEmpty').classList.toggle('hidden', items.length !== 0);
+    $('#homeMediaGrid').classList.toggle('hidden', items.length === 0);
+    $('#homeMediaCount').textContent = `${mediaItems.length} kỷ niệm đã lưu`;
+    $$('[data-home-filter]').forEach(button => button.classList.toggle('active', button.dataset.homeFilter === homeFilter));
+  }
+  function renderGallery() {
+    let items = mediaItems.filter(searchable);
+    if (galleryFilter === 'photo' || galleryFilter === 'video') items = items.filter(item => item.media_type === galleryFilter);
+    if (galleryFilter === 'mine') items = items.filter(item => item.user_id === currentUser?.id);
+    if ($('#gallerySort')?.value === 'oldest') items.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    else items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    $('#galleryMediaGrid').innerHTML = items.map(renderMediaCard).join('');
+    $('#galleryEmpty').classList.toggle('hidden', items.length !== 0);
+    $('#galleryMediaGrid').classList.toggle('hidden', items.length === 0);
+    $$('[data-gallery-filter]').forEach(button => button.classList.toggle('active', button.dataset.galleryFilter === galleryFilter));
+  }
+  function renderPeople() {
+    const query = searchTerm;
+    const people = profiles.filter(profile => {
+      if (!query) return true;
+      return [displayName(profile), profile.nickname, profile.bio].join(' ').toLocaleLowerCase('vi').includes(query);
+    });
+    const tint = ['#fde9ed', '#eee8ff', '#fff2d4', '#e5f3e8', '#fce9e0'];
+    $('#peopleCount').textContent = profiles.length;
+    $('#heroPeopleCount').textContent = `${profiles.length} thành viên`;
+    $('#heroAvatarStack').innerHTML = profiles.slice(0, 3).map((profile, index) => profile.avatar_url
+      ? `<span style="padding:0;overflow:hidden;background:${tint[index % tint.length]}"><img src="${escapeAttr(profile.avatar_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/></span>`
+      : `<span style="background:${tint[index % tint.length]}">${shortInitial(displayName(profile))}</span>`).join('') || '<span>✿</span><span>♡</span><span>☼</span>';
+    $('#peopleGrid').innerHTML = people.map((profile, index) => {
+      const ownMedia = mediaItems.filter(item => item.user_id === profile.id);
+      const bio = profile.bio || 'đang viết tiếp câu chuyện thanh xuân...';
+      return `<article class="person-card" data-action="view-profile" data-user-id="${escapeAttr(profile.id)}" tabindex="0" role="button" style="--person-tint:${tint[index % tint.length]};animation-delay:${Math.min(index * 30, 240)}ms"><div class="person-avatar">${profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện ${escapeAttr(displayName(profile))}" loading="lazy"/>` : shortInitial(displayName(profile))}</div><h3>${escapeHTML(displayName(profile))}</h3><p class="person-nickname">${escapeHTML(profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5')}</p><p class="person-bio">${escapeHTML(bio)}</p><div class="person-statline"><span>▧ <b>${ownMedia.filter(item => item.media_type === 'photo').length}</b> ảnh</span><span>▷ <b>${ownMedia.filter(item => item.media_type === 'video').length}</b> video</span></div><span class="person-view-button">Ghé thăm góc nhỏ ↗</span></article>`;
+    }).join('');
+    $('#peopleEmpty').classList.toggle('hidden', people.length !== 0);
+    $('#peopleGrid').classList.toggle('hidden', people.length === 0);
+  }
+  function renderProfile() {
+    if (!currentProfile || !currentUser) return;
+    const profile = currentProfile;
+    const name = displayName(profile);
+    $('#sidebarUser').innerHTML = `${avatarHTML(profile)}<div class="sidebar-user-info"><strong>${escapeHTML(name)}</strong><small>${escapeHTML(profile.nickname || 'Thành viên A5')}</small></div>`;
+    $('#topAvatarButton').innerHTML = profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện"/>` : shortInitial(name);
+    $('#helloName').textContent = profile.nickname || name.split(/\s+/)[0] || 'người bạn A5';
+    $('#profileLargeAvatar').innerHTML = profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện"/>` : shortInitial(name);
+    $('#profileDisplayName').textContent = name;
+    $('#profileNickname').textContent = profile.nickname ? `“${profile.nickname}”` : 'chưa có biệt danh';
+    $('#profileBio').textContent = profile.bio || 'Mỗi ngày đi học là một trang trong cuốn lưu bút.';
+    $('#myEmail').textContent = currentUser.email || 'Email không được cung cấp';
+    const providers = new Set(profile.linked_providers || linkedProviders(currentUser));
+    setProviderStatus('google', providers.has('google'));
+    setProviderStatus('facebook', providers.has('facebook'));
+    $('#memberSince').textContent = formatDate(profile.created_at, false);
+    const mine = mediaItems.filter(item => item.user_id === currentUser.id);
+    $('#myPhotoCount').textContent = mine.filter(item => item.media_type === 'photo').length;
+    $('#myVideoCount').textContent = mine.filter(item => item.media_type === 'video').length;
+    const myIds = new Set(mine.map(item => item.id));
+    $('#myReactionCount').textContent = reactionItems.filter(reaction => myIds.has(reaction.media_id) && reaction.user_id !== currentUser.id).length;
+    $('#profileMediaGrid').innerHTML = mine.slice(0, 6).map(renderMediaCard).join('');
+    $('#profileMediaEmpty').classList.toggle('hidden', mine.length !== 0);
+    $('#profileMediaGrid').classList.toggle('hidden', mine.length === 0);
+  }
+  function setProviderStatus(provider, connected) {
+    const title = provider === 'google' ? 'googleStatus' : 'facebookStatus';
+    const button = $(`[data-action="link-${provider}"]`);
+    $(`#${title}`).textContent = connected ? 'Đã liên kết với tài khoản này' : 'Chưa liên kết';
+    if (button) {
+      button.textContent = connected ? 'Đã liên kết ✓' : 'Liên kết ↗';
+      button.disabled = connected;
+      button.title = connected ? 'Tài khoản đã được liên kết' : `Liên kết ${provider === 'google' ? 'Google' : 'Facebook'}`;
+    }
+  }
+  function renderAll() {
+    renderProfile(); renderHomeMedia(); renderGallery(); renderPeople(); updateActiveTab();
+  }
+  function switchTab(tab) {
+    if (!['home', 'gallery', 'people', 'profile'].includes(tab)) return;
+    activeTab = tab;
+    updateActiveTab();
+    if (tab === 'gallery') renderGallery();
+    if (tab === 'people') renderPeople();
+    if (tab === 'profile') renderProfile();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function updateActiveTab() {
+    const names = { home: 'Trang chủ', gallery: 'Album kỷ niệm', people: 'Thành viên A5', profile: 'Góc của tớ' };
+    $$('.page-view').forEach(page => page.classList.toggle('active', page.id === `page-${activeTab}`));
+    $$('[data-tab]').forEach(item => item.classList.toggle('active', item.dataset.tab === activeTab));
+    $('#breadcrumbCurrent').textContent = names[activeTab] || names.home;
+  }
+
+  function openModal(id) {
+    const modal = $(`#${id}`);
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    const firstInput = modal.querySelector('input:not([type=hidden]):not([type=file]),textarea,button:not(.modal-close)');
+    if (firstInput) window.setTimeout(() => firstInput.focus({ preventScroll: true }), 80);
+  }
+  function closeModals() {
+    $$('.modal-backdrop,.confirm-backdrop').forEach(modal => modal.classList.add('hidden'));
+    document.body.style.overflow = '';
+    pendingDeleteMediaId = null;
+  }
+  function openUpload(type = 'photo') {
+    if (!currentUser) return toast('Đăng nhập để lưu kỷ niệm cùng A5 nhé.', 'info');
+    setUploadType(type);
+    selectedUploadFiles = [];
+    $('#mediaFiles').value = '';
+    $('#selectedFiles').textContent = 'Chưa chọn tệp nào';
+    $('#uploadCaption').value = '';
+    $('#uploadNoteColor').value = '#b64f73';
+    $('#uploadNoteFont').value = 'Nunito';
+    $('#uploadProgress').classList.add('hidden');
+    $('#uploadSubmit').disabled = false;
+    $('#uploadSubmit').innerHTML = 'Lưu vào album A5 <span>♡</span>';
+    openModal('uploadModal');
+  }
+  function setUploadType(type) {
+    currentUploadType = type === 'video' ? 'video' : 'photo';
+    const isVideo = currentUploadType === 'video';
+    $('#mediaFiles').accept = isVideo ? VIDEO_TYPES.join(',') : PHOTO_TYPES.join(',');
+    $('#mediaFiles').multiple = true;
+    $('#fileLimits').textContent = isVideo ? 'Tối đa 50 MB mỗi video · MP4, MOV, WEBM' : 'Tối đa 15 MB mỗi ảnh · có thể chọn nhiều ảnh';
+    $('#uploadModalTitle').textContent = isVideo ? 'Gửi một thước phim nhé!' : 'Cất một khoảnh khắc nhé!';
+    $('#uploadModalSubtitle').textContent = isVideo ? 'Một đoạn video nhỏ cũng đủ làm cả lớp nhớ mãi.' : 'Mỗi kỷ niệm là một mảnh ghép của A5.';
+    $$('.upload-type').forEach(button => button.classList.toggle('active', button.dataset.uploadType === currentUploadType));
+    updateSelectedFileLabel();
+  }
+  function validateSelectedFiles(files, type) {
+    const allowed = type === 'video' ? VIDEO_TYPES : PHOTO_TYPES;
+    const maxSize = type === 'video' ? VIDEO_MAX : PHOTO_MAX;
+    for (const file of files) {
+      if (!allowed.includes(file.type)) return `Tệp “${file.name}” không phải ${type === 'video' ? 'video được hỗ trợ' : 'ảnh được hỗ trợ'}.`;
+      if (file.size > maxSize) return `Tệp “${file.name}” lớn hơn giới hạn ${type === 'video' ? '50 MB' : '15 MB'}.`;
+      if (file.size === 0) return `Tệp “${file.name}” đang trống.`;
+    }
+    return '';
+  }
+  function updateSelectedFileLabel() {
+    const element = $('#selectedFiles');
+    if (!selectedUploadFiles.length) { element.textContent = 'Chưa chọn tệp nào'; return; }
+    if (selectedUploadFiles.length === 1) element.textContent = `${selectedUploadFiles[0].name} · ${humanBytes(selectedUploadFiles[0].size)}`;
+    else element.textContent = `Đã chọn ${selectedUploadFiles.length} tệp · ${humanBytes(selectedUploadFiles.reduce((sum, file) => sum + file.size, 0))}`;
+  }
+
+  async function uploadSelectedFiles(event) {
+    event.preventDefault();
+    if (isUploading) return;
+    if (!selectedUploadFiles.length) return toast('Cậu chọn tệp trước khi lưu nhé.', 'error');
+    const validation = validateSelectedFiles(selectedUploadFiles, currentUploadType);
+    if (validation) return toast(validation, 'error', 5000);
+    if (!currentUser || !supabase) return toast('Phiên đăng nhập đã hết. Hãy đăng nhập lại nhé.', 'error');
+    isUploading = true;
+    const files = [...selectedUploadFiles];
+    const caption = $('#uploadCaption').value.trim();
+    const noteColor = safeColor($('#uploadNoteColor').value);
+    const noteFont = safeFont($('#uploadNoteFont').value);
+    const submit = $('#uploadSubmit');
+    const progress = $('#uploadProgress');
+    const bar = $('#uploadProgressBar');
+    const progressText = $('#uploadProgressText');
+    submit.disabled = true; progress.classList.remove('hidden');
+    const savedPaths = [];
+    let complete = 0;
+    try {
+      for (const file of files) {
+        progressText.textContent = `Đang tải ${file.name}... (${complete + 1}/${files.length})`;
+        bar.style.width = `${Math.max(8, Math.round((complete / files.length) * 100))}%`;
+        const path = `${currentUser.id}/${Date.now()}-${uniqueId()}-${safeFileName(file.name)}`;
+        const { error: storageError } = await supabase.storage.from(MEDIA_BUCKET).upload(path, file, {
+          cacheControl: '3600', upsert: false, contentType: file.type
+        });
+        if (storageError) throw storageError;
+        savedPaths.push(path);
+        const { error: insertError } = await supabase.from('media_items').insert({
+          user_id: currentUser.id, media_type: currentUploadType, storage_path: path,
+          caption, note_color: noteColor, note_font: noteFont
+        });
+        if (insertError) {
+          await supabase.storage.from(MEDIA_BUCKET).remove([path]);
+          savedPaths.pop();
+          throw insertError;
+        }
+        complete++;
+      }
+      bar.style.width = '100%'; progressText.textContent = 'Đã cất vào cuốn lưu bút ♡';
+      closeModals();
+      toast(files.length === 1 ? 'Kỷ niệm đã được cất vào album A5! ♡' : `Đã lưu ${files.length} kỷ niệm vào album A5! ♡`, 'success');
+      signedUrlCache.clear(); await loadData(false);
+      switchTab('gallery');
+    } catch (error) {
+      console.error('Upload failed:', error);
+      if (savedPaths.length) {
+        console.warn('Some files were stored before the upload failed:', savedPaths);
+        await loadData(false);
+      }
+      progressText.textContent = 'Chưa tải lên được. Cậu thử lại nhé.';
+      toast(`Tải tệp thất bại: ${(error?.message || 'Hãy kiểm tra giới hạn storage và quyền truy cập.').slice(0, 130)}`, 'error', 6500);
+    } finally {
+      isUploading = false; submit.disabled = false;
+      submit.innerHTML = 'Lưu vào album A5 <span>♡</span>';
+      bar.style.width = '0%';
+    }
+  }
+
+  function openProfileEditor() {
+    if (!currentProfile) return;
+    selectedAvatarFile = null;
+    $('#displayNameInput').value = currentProfile.display_name || '';
+    $('#nicknameInput').value = currentProfile.nickname || '';
+    $('#bioInput').value = currentProfile.bio || '';
+    $('#avatarFile').value = '';
+    $('#editAvatarPreview').innerHTML = currentProfile.avatar_url ? `<img src="${escapeAttr(currentProfile.avatar_url)}" alt="Ảnh đại diện hiện tại"/>` : shortInitial(displayName(currentProfile));
+    openModal('editProfileModal');
+  }
+  async function saveProfile(event) {
+    event.preventDefault();
+    if (!supabase || !currentUser || !currentProfile) return;
+    const display_name = $('#displayNameInput').value.trim();
+    const nickname = $('#nicknameInput').value.trim();
+    const bio = $('#bioInput').value.trim();
+    if (display_name.length < 1) return toast('Tên hiển thị không được để trống.', 'error');
+    if (display_name.length > 40 || nickname.length > 32 || bio.length > 180) return toast('Một trong các mục đã vượt quá số ký tự cho phép.', 'error');
+    const button = $('#saveProfileButton'); button.disabled = true; button.textContent = 'Đang lưu...';
+    const previousAvatarPath = currentProfile.avatar_path || null;
+    let avatarPath = previousAvatarPath;
+    let uploadedNewAvatar = null;
+    try {
+      if (selectedAvatarFile) {
+        if (!PHOTO_TYPES.includes(selectedAvatarFile.type)) throw new Error('Ảnh đại diện cần là JPG, PNG, WEBP, GIF hoặc AVIF.');
+        if (selectedAvatarFile.size > AVATAR_MAX) throw new Error('Ảnh đại diện tối đa 5 MB.');
+        const path = `${currentUser.id}/${Date.now()}-${uniqueId()}-${safeFileName(selectedAvatarFile.name)}`;
+        const { error: uploadError } = await supabase.storage.from(AVATAR_BUCKET).upload(path, selectedAvatarFile, { upsert: false, contentType: selectedAvatarFile.type, cacheControl: '3600' });
+        if (uploadError) throw uploadError;
+        avatarPath = path; uploadedNewAvatar = path;
+      }
+      const { data, error } = await supabase.from('profiles').update({ display_name, nickname, bio, avatar_path: avatarPath }).eq('id', currentUser.id).select('id,display_name,nickname,bio,avatar_path,linked_providers,created_at,updated_at').single();
+      if (error) throw error;
+      const resolved = { ...data, avatar_url: await resolveSignedUrl(AVATAR_BUCKET, data.avatar_path) };
+      currentProfile = resolved; profiles = profiles.map(profile => profile.id === resolved.id ? resolved : profile);
+      if (uploadedNewAvatar && previousAvatarPath && previousAvatarPath !== uploadedNewAvatar) {
+        const { error: oldAvatarError } = await supabase.storage.from(AVATAR_BUCKET).remove([previousAvatarPath]);
+        if (oldAvatarError) console.warn('Avatar was updated but the previous file could not be removed:', oldAvatarError.message);
+      }
+      closeModals(); renderAll(); toast('Góc nhỏ của cậu đã được cập nhật! ♡', 'success');
+    } catch (error) {
+      console.error('Profile update failed:', error);
+      if (uploadedNewAvatar) await supabase.storage.from(AVATAR_BUCKET).remove([uploadedNewAvatar]);
+      toast(`Chưa lưu được hồ sơ: ${(error?.message || 'Lỗi không xác định').slice(0, 130)}`, 'error', 6000);
+    } finally { button.disabled = false; button.innerHTML = 'Lưu thay đổi <span>♡</span>'; }
+  }
+
+  function openEditMedia(id) {
+    const item = mediaItems.find(media => media.id === id);
+    if (!item || item.user_id !== currentUser?.id) return toast('Chỉ chủ bài đăng mới có thể chỉnh sửa.', 'error');
+    $('#editMediaId').value = item.id;
+    $('#editMediaCaption').value = item.caption || '';
+    $('#editMediaColor').value = safeColor(item.note_color);
+    $('#editMediaFont').value = safeFont(item.note_font);
+    openModal('editMediaModal');
+  }
+  async function saveMediaEdit(event) {
+    event.preventDefault();
+    const id = $('#editMediaId').value;
+    const item = mediaItems.find(media => media.id === id);
+    if (!item || item.user_id !== currentUser?.id) return toast('Cậu không có quyền chỉnh sửa kỷ niệm này.', 'error');
+    const { error } = await supabase.from('media_items').update({
+      caption: $('#editMediaCaption').value.trim(), note_color: safeColor($('#editMediaColor').value), note_font: safeFont($('#editMediaFont').value)
+    }).eq('id', id).eq('user_id', currentUser.id);
+    if (error) { console.error(error); return toast('Chỉnh sửa chưa được lưu. Cậu thử lại nhé.', 'error'); }
+    closeModals(); toast('Đã làm mới lời nhắn cho kỷ niệm ♡', 'success'); await loadData(false);
+  }
+
+  function askDeleteMedia(id) {
+    const item = mediaItems.find(media => media.id === id);
+    if (!item || item.user_id !== currentUser?.id) return toast('Chỉ chủ bài đăng mới có thể xóa.', 'error');
+    pendingDeleteMediaId = id;
+    $('#confirmTitle').textContent = 'Xóa kỷ niệm này?';
+    $('#confirmMessage').textContent = 'Ảnh/video và các cảm xúc gắn với bài đăng sẽ bị xóa. Việc này không thể hoàn tác.';
+    $('#confirmDeleteButton').textContent = 'Xóa kỷ niệm';
+    $('#confirmDeleteButton').disabled = false;
+    openModal('confirmModal');
+  }
+  async function confirmDeleteMedia() {
+    const id = pendingDeleteMediaId;
+    const item = mediaItems.find(media => media.id === id);
+    if (!id || !item || item.user_id !== currentUser?.id) { closeModals(); return; }
+    const button = $('#confirmDeleteButton'); button.disabled = true; button.textContent = 'Đang xóa...';
+    try {
+      const { error } = await supabase.from('media_items').delete().eq('id', id).eq('user_id', currentUser.id);
+      if (error) throw error;
+      const { error: storageError } = await supabase.storage.from(MEDIA_BUCKET).remove([item.storage_path]);
+      if (storageError) console.warn('Media record deleted but storage cleanup failed:', storageError.message);
+      reactionItems = reactionItems.filter(reaction => reaction.media_id !== id);
+      mediaItems = mediaItems.filter(media => media.id !== id);
+      signedUrlCache.delete(`${MEDIA_BUCKET}:${item.storage_path}`);
+      closeModals(); renderAll(); toast('Kỷ niệm đã được xóa khỏi album.', 'success');
+    } catch (error) {
+      console.error('Delete failed:', error); toast(`Không xóa được kỷ niệm: ${(error?.message || '').slice(0, 100)}`, 'error');
+    } finally { button.disabled = false; button.textContent = 'Xóa kỷ niệm'; }
+  }
+
+  async function toggleReaction(mediaId, emoji) {
+    if (!currentUser || !supabase) return;
+    const found = reactionItems.find(reaction => reaction.media_id === mediaId && reaction.user_id === currentUser.id && reaction.emoji === emoji);
+    try {
+      if (found) {
+        const { error } = await supabase.from('reactions').delete().eq('id', found.id).eq('user_id', currentUser.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('reactions').insert({ media_id: mediaId, user_id: currentUser.id, emoji });
+        if (error && !String(error.message || '').toLowerCase().includes('duplicate')) throw error;
+      }
+      await loadReactions(); renderAll();
+    } catch (error) { console.error('Reaction error:', error); toast('Chưa gửi được cảm xúc. Cậu thử lại nhé.', 'error'); }
+  }
+  function openReactions(mediaId, emojiFilter = '') {
+    const item = mediaItems.find(media => media.id === mediaId);
+    const all = reactionItems.filter(reaction => reaction.media_id === mediaId && (!emojiFilter || reaction.emoji === emojiFilter)).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    $('#reactionModalTitle').textContent = emojiFilter ? `Ai đã thả ${emojiFilter}?` : 'Ai đã gửi cảm xúc? ♡';
+    $('#reactionList').innerHTML = all.length ? all.map(reaction => {
+      const profile = profiles.find(person => person.id === reaction.user_id) || reaction.profile || {};
+      return `<div class="reaction-list-row"><span class="reaction-list-emoji">${escapeHTML(reaction.emoji)}</span><div class="reaction-list-info"><strong>${escapeHTML(displayName(profile))}${reaction.user_id === currentUser?.id ? ' · cậu' : ''}</strong><small>${escapeHTML(profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5')}</small></div><time class="reaction-list-time" title="${escapeAttr(new Date(reaction.created_at).toISOString())}">${escapeHTML(formatDate(reaction.created_at, true))}</time></div>`;
+    }).join('') : `<div class="reaction-empty">${emojiFilter ? `${emojiFilter} chưa được ai thả. Hãy là người đầu tiên nhé!` : 'Chưa có cảm xúc nào. Ai sẽ là người đầu tiên nhỉ? ♡'}</div>`;
+    if (!item) toast('Không tìm thấy kỷ niệm này.', 'error');
+    openModal('reactionModal');
+  }
+
+  function openPublicProfile(id) {
+    const profile = profiles.find(person => person.id === id);
+    if (!profile) return toast('Chưa tìm được hồ sơ của bạn ấy.', 'error');
+    const own = mediaItems.filter(item => item.user_id === id);
+    $('#publicProfileAvatar').innerHTML = profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện"/>` : shortInitial(displayName(profile));
+    $('#publicProfileName').textContent = displayName(profile);
+    $('#publicProfileNickname').textContent = profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5';
+    $('#publicProfileBio').textContent = profile.bio || 'đang viết tiếp câu chuyện thanh xuân...';
+    $('#publicPhotoCount').textContent = own.filter(item => item.media_type === 'photo').length;
+    $('#publicVideoCount').textContent = own.filter(item => item.media_type === 'video').length;
+    $('#publicMemberSince').textContent = formatMonth(profile.created_at);
+    const providers = new Set(profile.linked_providers || []);
+    $('#publicProviders').innerHTML = `<span class="provider-chip ${providers.has('google') ? 'connected' : ''}">${providers.has('google') ? '✓ ' : ''}Google ${providers.has('google') ? 'đã liên kết' : 'chưa liên kết'}</span><span class="provider-chip ${providers.has('facebook') ? 'connected' : ''}">${providers.has('facebook') ? '✓ ' : ''}Facebook ${providers.has('facebook') ? 'đã liên kết' : 'chưa liên kết'}</span>`;
+    const photos = own.filter(item => item.media_type === 'photo').slice(0, 8);
+    $('#publicProfilePhotos').innerHTML = photos.map(item => item.url ? `<div class="public-profile-photo"><img src="${escapeAttr(item.url)}" alt="Kỷ niệm" loading="lazy"/></div>` : '<div class="public-profile-photo">✿</div>').join('');
+    $('#publicProfilePhotos').classList.toggle('hidden', photos.length === 0);
+    openModal('publicProfileModal');
+  }
+
+  async function linkProvider(provider) {
+    if (!currentUser || !supabase) return;
+    const providers = new Set(currentProfile?.linked_providers || linkedProviders(currentUser));
+    if (providers.has(provider)) return toast(`${provider === 'google' ? 'Google' : 'Facebook'} đã liên kết với hồ sơ rồi.`, 'info');
+    try {
+      const { error } = await supabase.auth.linkIdentity({ provider, options: { redirectTo: `${window.location.origin}${window.location.pathname}` } });
+      if (error) throw error;
+      toast(`Đang mở ${provider === 'google' ? 'Google' : 'Facebook'} để xác nhận liên kết...`, 'info', 5000);
+    } catch (error) {
+      console.error('Link identity error:', error);
+      toast('Chưa liên kết được. Hãy bật Identity Linking và cấu hình provider trong Supabase.', 'error', 6000);
+    }
+  }
+
+  function bindEvents() {
+    $('#googleLogin')?.addEventListener('click', () => signIn('google'));
+    $('#facebookLogin')?.addEventListener('click', () => signIn('facebook'));
+    $('#logoutButton')?.addEventListener('click', signOut);
+    $('#topAvatarButton')?.addEventListener('click', () => switchTab('profile'));
+    $('#topUploadButton')?.addEventListener('click', () => openUpload('photo'));
+    $('#uploadForm')?.addEventListener('submit', uploadSelectedFiles);
+    $('#profileForm')?.addEventListener('submit', saveProfile);
+    $('#editMediaForm')?.addEventListener('submit', saveMediaEdit);
+    $('#confirmDeleteButton')?.addEventListener('click', confirmDeleteMedia);
+    $('#gallerySort')?.addEventListener('change', renderGallery);
+    $('#mediaFiles')?.addEventListener('change', event => {
+      selectedUploadFiles = [...(event.target.files || [])];
+      const validation = validateSelectedFiles(selectedUploadFiles, currentUploadType);
+      if (validation) { toast(validation, 'error', 5000); selectedUploadFiles = []; event.target.value = ''; }
+      updateSelectedFileLabel();
+    });
+    $('#avatarFile')?.addEventListener('change', event => {
+      const file = event.target.files?.[0] || null;
+      if (!file) return;
+      if (!PHOTO_TYPES.includes(file.type)) { toast('Tệp này không phải định dạng ảnh được hỗ trợ.', 'error'); event.target.value = ''; return; }
+      if (file.size > AVATAR_MAX) { toast('Ảnh đại diện tối đa 5 MB.', 'error'); event.target.value = ''; return; }
+      selectedAvatarFile = file;
+      const objectUrl = URL.createObjectURL(file);
+      $('#editAvatarPreview').innerHTML = `<img src="${escapeAttr(objectUrl)}" alt="Ảnh đại diện mới"/>`;
+    });
+    $('#globalSearch')?.addEventListener('input', event => {
+      searchTerm = event.target.value.trim().toLocaleLowerCase('vi');
+      if (activeTab === 'home') renderHomeMedia();
+      if (activeTab === 'gallery') renderGallery();
+      if (activeTab === 'people') renderPeople();
+    });
+    $('#dropzone')?.addEventListener('dragover', event => { event.preventDefault(); $('#dropzone').classList.add('dragging'); });
+    $('#dropzone')?.addEventListener('dragleave', () => $('#dropzone').classList.remove('dragging'));
+    $('#dropzone')?.addEventListener('drop', event => {
+      event.preventDefault(); $('#dropzone').classList.remove('dragging');
+      const files = [...(event.dataTransfer?.files || [])];
+      const validation = validateSelectedFiles(files, currentUploadType);
+      if (validation) return toast(validation, 'error', 5000);
+      selectedUploadFiles = files; updateSelectedFileLabel();
+    });
+    document.addEventListener('click', async event => {
+      const tab = event.target.closest('[data-tab]');
+      if (tab) { event.preventDefault(); switchTab(tab.dataset.tab); return; }
+      const homeFilterButton = event.target.closest('[data-home-filter]');
+      if (homeFilterButton) { homeFilter = homeFilterButton.dataset.homeFilter; renderHomeMedia(); return; }
+      const galleryFilterButton = event.target.closest('[data-gallery-filter]');
+      if (galleryFilterButton) { galleryFilter = galleryFilterButton.dataset.galleryFilter; renderGallery(); return; }
+      const typeButton = event.target.closest('[data-upload-type]');
+      if (typeButton) { selectedUploadFiles = []; $('#mediaFiles').value = ''; setUploadType(typeButton.dataset.uploadType); updateSelectedFileLabel(); return; }
+      const actionButton = event.target.closest('[data-action]');
+      if (!actionButton) return;
+      const action = actionButton.dataset.action;
+      if (action === 'upload-photo') openUpload('photo');
+      else if (action === 'upload-video') openUpload('video');
+      else if (action === 'edit-profile') openProfileEditor();
+      else if (action === 'close-modal') closeModals();
+      else if (action === 'edit-media') openEditMedia(actionButton.dataset.mediaId);
+      else if (action === 'delete-media') askDeleteMedia(actionButton.dataset.mediaId);
+      else if (action === 'toggle-reaction') await toggleReaction(actionButton.dataset.mediaId, actionButton.dataset.emoji);
+      else if (action === 'who-reacted') openReactions(actionButton.dataset.mediaId, actionButton.dataset.emoji || '');
+      else if (action === 'view-profile') openPublicProfile(actionButton.dataset.userId);
+      else if (action === 'link-google') await linkProvider('google');
+      else if (action === 'link-facebook') await linkProvider('facebook');
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') closeModals();
+      if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-action="view-profile"][role="button"]')) {
+        event.preventDefault(); openPublicProfile(event.target.dataset.userId);
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault(); $('#globalSearch')?.focus();
+      }
+    });
+    $$('.modal-backdrop').forEach(modal => modal.addEventListener('click', event => { if (event.target === modal) closeModals(); }));
+    $('#confirmModal')?.addEventListener('click', event => { if (event.target.id === 'confirmModal') closeModals(); });
+  }
+
+  document.addEventListener('DOMContentLoaded', initialize);
+})();

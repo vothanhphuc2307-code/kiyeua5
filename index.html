@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#fff7f3" />
+  <meta name="description" content="Nơi lưu giữ thanh xuân A5 — album ảnh, video và những kỷ niệm cuối cấp của chúng mình." />
+  <title>NƠI LƯU GIỮ THANH XUÂN A5</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Nunito:wght@400;500;600;700;800;900&family=Playfair+Display:wght@600;700&family=Patrick+Hand&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div id="splash" class="splash" aria-label="Đang mở cuốn lưu bút">
+    <div class="splash-paper"><span class="splash-flower">✿</span><div class="splash-title">A5</div><div class="splash-line"></div><p>đang mở cuốn lưu bút...</p><div class="splash-dots"><i></i><i></i><i></i></div></div>
+  </div>
+
+  <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+
+  <section id="authScreen" class="auth-screen hidden">
+    <div class="auth-art">
+      <div class="art-topline"><span class="tiny-pill">✦ LƯU BÚT ONLINE · A5</span><span class="art-year">NIÊN KHÓA CỦA CHÚNG MÌNH</span></div>
+      <div class="art-title-wrap"><p class="eyebrow">một chút hôm nay, một đời để nhớ</p><h1>NƠI LƯU GIỮ<br/><em>THANH XUÂN</em> <span class="a5-stamp">A5</span></h1><p class="art-copy">Cất lại những ngày bình thường nhất,<br/>để sau này nhìn lại thấy mình đã từng rực rỡ thế nào.</p></div>
+      <div class="polaroid-stack" aria-hidden="true">
+        <div class="polaroid polaroid-back"><div class="photo-placeholder doodle-photo"><span>✿</span><span>♡</span><span>☁</span></div><p>our little days</p></div>
+        <div class="polaroid polaroid-front"><div class="photo-placeholder class-photo"><div class="sun-doodle">☼</div><div class="hill hill-a"></div><div class="hill hill-b"></div><div class="tiny-people">●　●　●　●　●</div><span class="photo-sticker">A5 forever ✦</span></div><p>thanh xuân có nhau ♡</p></div>
+        <div class="floating-note note-one">đừng quên<br/>chúng mình nha!</div><div class="floating-note note-two">✧ 2026 ✧</div><div class="floating-heart">♡</div>
+      </div>
+      <div class="art-footer"><span>made of little memories</span><span>♥</span><span>keepsake no. 05</span></div>
+    </div>
+    <div class="auth-panel-wrap">
+      <div class="auth-panel">
+        <div class="mini-brand"><div class="brand-mark">A<span>5</span></div><div><strong>Góc lưu bút</strong><small>lớp mình, chuyện mình</small></div></div>
+        <span class="welcome-tag">✿ CHÀO CẬU, BẠN CŨNG Ở ĐÂY RỒI!</span>
+        <h2>Mình cùng giữ<br/>lại thanh xuân nhé.</h2>
+        <p class="muted auth-description">Đăng nhập để đăng ảnh, kể chuyện và tìm lại những khoảnh khắc của A5.</p>
+        <div class="auth-buttons">
+          <button class="social-button google-button" id="googleLogin"><span class="google-g" aria-hidden="true">G</span><span>Tiếp tục với Google</span><span class="button-arrow">↗</span></button>
+          <button class="social-button facebook-button" id="facebookLogin"><span class="facebook-f" aria-hidden="true">f</span><span>Tiếp tục với Facebook</span><span class="button-arrow">↗</span></button>
+        </div>
+        <p id="authHint" class="auth-hint">Tài khoản của cậu sẽ có một góc riêng để quản lý bài đăng.</p>
+        <div id="setupNotice" class="setup-notice hidden"><span>🛠️</span><div><strong>Chưa kết nối backend</strong><p>Điền URL và anon key của Supabase trong <code>config.js</code>, sau đó chạy file SQL trong thư mục <code>supabase</code>. Xem hướng dẫn trong README.</p></div></div>
+        <div class="auth-foot"><span>🔒 Góc kỷ niệm dành cho thành viên</span><span>với thật nhiều thương mến</span></div>
+      </div>
+    </div>
+  </section>
+
+  <div id="appShell" class="app-shell hidden">
+    <aside class="sidebar">
+      <a class="brand-lockup" href="#home" data-tab="home"><div class="brand-mark">A<span>5</span></div><div><strong>Góc lưu bút</strong><small>thanh xuân chúng mình</small></div></a>
+      <div class="sidebar-label">KHÔNG GIAN A5</div>
+      <nav class="main-nav" aria-label="Điều hướng chính">
+        <button class="nav-item active" data-tab="home"><span class="nav-icon">⌂</span><span>Trang chủ</span><span class="nav-spark">✦</span></button>
+        <button class="nav-item" data-tab="gallery"><span class="nav-icon">▧</span><span>Album kỷ niệm</span></button>
+        <button class="nav-item" data-tab="people"><span class="nav-icon">♡</span><span>Thành viên A5</span></button>
+        <button class="nav-item" data-tab="profile"><span class="nav-icon">☻</span><span>Góc của tớ</span></button>
+      </nav>
+      <div class="sidebar-memory-card"><div class="mini-sun">☼</div><span class="memory-card-label">LỜI NHẮN NHỎ</span><p>“Sau này gặp lại, mong chúng ta đều đã trở thành người mà mình từng mơ.”</p><span class="memory-sign">— A5, thương lắm ♡</span><div class="card-flower">✿</div></div>
+      <div class="sidebar-user" id="sidebarUser"></div>
+      <button class="logout-button" id="logoutButton"><span>↪</span> Đăng xuất</button>
+      <div class="sidebar-bottom">made with ♡ for A5</div>
+    </aside>
+
+    <main class="app-main">
+      <header class="topbar">
+        <div class="mobile-brand"><div class="brand-mark">A<span>5</span></div><span>Góc lưu bút</span></div>
+        <div class="breadcrumbs"><span>KHÔNG GIAN A5</span><span class="breadcrumb-dot">·</span><strong id="breadcrumbCurrent">Trang chủ</strong></div>
+        <div class="topbar-actions"><label class="search-box"><span>⌕</span><input id="globalSearch" type="search" placeholder="Tìm khoảnh khắc..." aria-label="Tìm khoảnh khắc"/><kbd>⌘ K</kbd></label><button class="top-icon-button" id="topUploadButton" aria-label="Đăng kỷ niệm" title="Đăng kỷ niệm">＋</button><button class="top-avatar" id="topAvatarButton" aria-label="Mở hồ sơ"></button></div>
+      </header>
+
+      <div class="page-content">
+        <section class="page-view active" id="page-home">
+          <div class="home-hero">
+            <div class="hero-text"><div class="hero-kicker"><span class="kicker-star">✦</span> OUR LAST SCHOOL DAYS</div><h1>Xin chào, <span id="helloName">người bạn A5</span> <span class="wave">✿</span></h1><p>Những ngày cuối cấp sẽ qua nhanh lắm. Mình cùng gom từng khoảnh khắc nhỏ để sau này vẫn có thể tìm thấy nhau ở đây nhé.</p><div class="hero-actions"><button class="primary-button" data-action="upload-photo"><span>↥</span> Lưu một khoảnh khắc</button><button class="text-button" data-tab="gallery">Khám phá album <span>↗</span></button></div><div class="hero-quickfacts"><div class="quick-avatars" id="heroAvatarStack"><span>✿</span><span>♡</span><span>☼</span></div><span><strong id="heroPeopleCount">0 thành viên</strong> đang cùng viết nên câu chuyện A5</span></div></div>
+            <div class="hero-collage" aria-hidden="true"><div class="collage-tape"></div><div class="collage-polaroid collage-main"><div class="collage-scene"><div class="scene-sun">☼</div><div class="scene-cloud cloud-a"></div><div class="scene-cloud cloud-b"></div><div class="scene-hill scene-hill-one"></div><div class="scene-hill scene-hill-two"></div><div class="scene-class">✿　✦　✿　✦</div></div><div class="collage-caption">những ngày không thể quay lại ♡</div></div><div class="sticker sticker-a">A5<br/><small>MEMORIES</small></div><div class="sticker sticker-b">♡</div><div class="scribble-star">✧</div><div class="collage-note">dear<br/>youth,</div></div>
+          </div>
+          <div class="section-heading"><div><span class="section-overline">LƯU BÚT MỖI NGÀY</span><h2>Những điều mình muốn nhớ <span>♡</span></h2><p>Có những điều nhỏ xíu, nhưng sau này sẽ thành cả bầu trời kỷ niệm.</p></div><button class="subtle-button" data-tab="gallery">Xem tất cả <span>↗</span></button></div>
+          <div class="memory-filter-row"><div class="filter-pills"><button class="filter-pill active" data-home-filter="all">Tất cả</button><button class="filter-pill" data-home-filter="photo">Ảnh chụp</button><button class="filter-pill" data-home-filter="video">Video</button></div><span class="small-muted" id="homeMediaCount">mới nhất từ lớp mình</span></div>
+          <div class="media-grid" id="homeMediaGrid"><div class="loading-card"><span class="loading-flower">✿</span><p>Đang tìm lại những kỷ niệm...</p></div></div>
+          <div class="empty-state hidden" id="homeEmpty"><div class="empty-illustration">📸<span>✦</span></div><h3>Trang lưu bút vẫn đang chờ!</h3><p>Hãy là người đầu tiên góp một khoảnh khắc vào album A5 nhé.</p><button class="primary-button" data-action="upload-photo">Đăng ảnh đầu tiên ↗</button></div>
+          <div class="closing-note"><span>✦</span><p>“Một ngày nào đó, chúng ta sẽ nhớ những ngày hôm nay.”</p><span>✦</span></div>
+        </section>
+
+        <section class="page-view" id="page-gallery">
+          <div class="page-title-row"><div><span class="section-overline">THE MEMORY WALL</span><h1>Album kỷ niệm <span class="title-doodle">✿</span></h1><p>Mỗi tấm ảnh là một chiếc vé trở về ngày tháng ấy.</p></div><div class="title-actions"><button class="outline-button" data-action="upload-video"><span>▶</span> Tải video</button><button class="primary-button" data-action="upload-photo"><span>＋</span> Tải ảnh</button></div></div>
+          <div class="upload-strip"><div class="upload-strip-icon">✦</div><div><strong>Gửi vào đây một mẩu thanh xuân của cậu</strong><p>Ảnh và video được chia thành hai loại riêng. Chỉ chủ bài đăng mới có quyền sửa hoặc xóa kỷ niệm của mình.</p></div><span class="upload-strip-doodle">♡</span></div>
+          <div class="gallery-tools"><div class="filter-pills"><button class="filter-pill active" data-gallery-filter="all">Tất cả kỷ niệm</button><button class="filter-pill" data-gallery-filter="photo">▧ Ảnh</button><button class="filter-pill" data-gallery-filter="video">▷ Video</button><button class="filter-pill" data-gallery-filter="mine">♡ Của tớ</button></div><select id="gallerySort" class="sort-select" aria-label="Sắp xếp kỷ niệm"><option value="newest">Mới nhất trước</option><option value="oldest">Cũ nhất trước</option></select></div>
+          <div class="media-grid gallery-grid" id="galleryMediaGrid"><div class="loading-card"><span class="loading-flower">✿</span><p>Đang xếp album...</p></div></div>
+          <div class="empty-state hidden" id="galleryEmpty"><div class="empty-illustration">🎞️<span>♡</span></div><h3>Chưa có kỷ niệm ở đây</h3><p>Hãy bắt đầu bằng một bức ảnh, đoạn video, hoặc khoảnh khắc đáng nhớ.</p><div class="empty-actions"><button class="primary-button" data-action="upload-photo">Tải ảnh lên</button><button class="outline-button" data-action="upload-video">Tải video lên</button></div></div>
+        </section>
+
+        <section class="page-view" id="page-people">
+          <div class="page-title-row people-title"><div><span class="section-overline">OUR LITTLE CLASS</span><h1>Thành viên A5 <span class="title-doodle">♡</span></h1><p>Mỗi người một màu sắc, cùng nhau thành một thời thanh xuân.</p></div><div class="member-counter"><strong id="peopleCount">0</strong><span>mảnh ghép<br/>của A5</span></div></div>
+          <div class="people-intro"><span>🌷</span><p>Nhấn vào một chiếc thẻ để ghé thăm góc lưu bút của bạn ấy.</p><span>✦</span></div>
+          <div class="people-grid" id="peopleGrid"><div class="loading-card"><span class="loading-flower">✿</span><p>Đang gọi tên những người bạn...</p></div></div>
+          <div class="empty-state hidden" id="peopleEmpty"><div class="empty-illustration">👭<span>✦</span></div><h3>Lớp mình sẽ đông vui sớm thôi</h3><p>Khi các bạn đăng nhập lần đầu, hồ sơ sẽ xuất hiện tại đây.</p></div>
+        </section>
+
+        <section class="page-view" id="page-profile">
+          <div class="page-title-row"><div><span class="section-overline">MY LITTLE CORNER</span><h1>Góc nhỏ của tớ <span class="title-doodle">☻</span></h1><p>Chỉnh sửa hồ sơ và xem lại những kỷ niệm cậu đã lưu.</p></div><button class="outline-button" data-action="edit-profile">⚙ Chỉnh hồ sơ</button></div>
+          <div class="profile-banner"><div class="profile-banner-doodle doodle-left">✧</div><div class="profile-banner-doodle doodle-right">✿</div><div class="profile-large-avatar" id="profileLargeAvatar">♡</div><div class="profile-banner-info"><span class="profile-class-pill">✦ THÀNH VIÊN A5</span><h2 id="profileDisplayName">Bạn A5</h2><p id="profileNickname">chưa có biệt danh</p><p id="profileBio" class="profile-bio">Mỗi ngày đi học là một trang trong cuốn lưu bút.</p></div><button class="profile-edit-floating" data-action="edit-profile" aria-label="Chỉnh sửa hồ sơ">✎</button></div>
+          <div class="profile-stats-grid"><div class="profile-stat"><span class="stat-icon pink">▧</span><div><strong id="myPhotoCount">0</strong><span>Ảnh đã lưu</span></div></div><div class="profile-stat"><span class="stat-icon yellow">▷</span><div><strong id="myVideoCount">0</strong><span>Video đã lưu</span></div></div><div class="profile-stat"><span class="stat-icon lilac">♡</span><div><strong id="myReactionCount">0</strong><span>Lượt thả cảm xúc nhận được</span></div></div></div>
+          <div class="profile-details-card"><div class="details-card-heading"><div><span class="section-overline">ACCOUNT & PRIVACY</span><h3>Thông tin tài khoản</h3></div><span class="lock-badge">🔒 Riêng tư & an toàn</span></div><div class="detail-line"><span class="detail-icon">✉</span><div><small>Email đăng nhập</small><strong id="myEmail">Ẩn với thành viên khác</strong></div><span class="detail-status">Chỉ mình cậu</span></div><div class="detail-line"><span class="detail-icon google-detail">G</span><div><small>Tài khoản Google</small><strong id="googleStatus">Chưa liên kết</strong></div><button class="link-account-button" data-action="link-google">Liên kết ↗</button></div><div class="detail-line"><span class="detail-icon facebook-detail">f</span><div><small>Tài khoản Facebook</small><strong id="facebookStatus">Chưa liên kết</strong></div><button class="link-account-button" data-action="link-facebook">Liên kết ↗</button></div><div class="detail-line"><span class="detail-icon">◷</span><div><small>Tham gia A5</small><strong id="memberSince">—</strong></div></div></div>
+          <div class="section-heading profile-memories-heading"><div><span class="section-overline">MY MEMORIES</span><h2>Kỷ niệm tớ đã đăng <span>♡</span></h2></div><button class="subtle-button" data-tab="gallery">Đến album ↗</button></div>
+          <div class="media-grid" id="profileMediaGrid"></div>
+          <div class="empty-state hidden" id="profileMediaEmpty"><div class="empty-illustration">📝<span>♡</span></div><h3>Cuốn lưu bút của cậu đang còn trang trắng</h3><p>Đăng một khoảnh khắc nhỏ để giữ lại ngày hôm nay nhé.</p><button class="primary-button" data-action="upload-photo">Lưu kỷ niệm đầu tiên</button></div>
+        </section>
+      </div>
+      <footer class="app-footer"><span>✿ NƠI LƯU GIỮ THANH XUÂN A5</span><span>được lưu bằng những điều thương mến <b>♡</b></span></footer>
+    </main>
+    <nav class="mobile-nav" aria-label="Điều hướng di động"><button class="mobile-nav-item active" data-tab="home"><span>⌂</span><small>Trang chủ</small></button><button class="mobile-nav-item" data-tab="gallery"><span>▧</span><small>Album</small></button><button class="mobile-add" data-action="upload-photo" aria-label="Thêm kỷ niệm">＋</button><button class="mobile-nav-item" data-tab="people"><span>♡</span><small>Thành viên</small></button><button class="mobile-nav-item" data-tab="profile"><span>☻</span><small>Của tớ</small></button></nav>
+  </div>
+
+  <div class="modal-backdrop hidden" id="uploadModal" role="dialog" aria-modal="true" aria-labelledby="uploadModalTitle"><div class="modal-card upload-modal-card"><button class="modal-close" data-action="close-modal" aria-label="Đóng">×</button><div class="modal-sprinkle">✿</div><span class="section-overline">ADD TO OUR STORY</span><h2 id="uploadModalTitle">Cất một khoảnh khắc nhé!</h2><p class="modal-subtitle" id="uploadModalSubtitle">Mỗi kỷ niệm là một mảnh ghép của A5.</p><div class="upload-type-switch"><button class="upload-type active" data-upload-type="photo"><span>▧</span><strong>Ảnh</strong><small>JPG, PNG, WEBP...</small></button><button class="upload-type" data-upload-type="video"><span>▷</span><strong>Video</strong><small>MP4, MOV, WEBM...</small></button></div><form id="uploadForm"><label class="dropzone" id="dropzone"><input id="mediaFiles" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" multiple required/><span class="dropzone-icon">↥</span><strong>Kéo thả hoặc <u>chọn tệp</u></strong><small id="fileLimits">Tối đa 15 MB mỗi ảnh · có thể chọn nhiều ảnh</small><span id="selectedFiles" class="selected-files">Chưa chọn tệp nào</span></label><div class="form-field"><label for="uploadCaption">Một lời nhắn cho khoảnh khắc <span>không bắt buộc</span></label><textarea id="uploadCaption" maxlength="500" rows="2" placeholder="Ví dụ: Hôm ấy lớp mình cười nhiều ghê... "></textarea></div><div class="form-field"><div class="note-design-heading"><label for="uploadNoteColor">Màu lời nhắn</label><label for="uploadNoteFont">Kiểu chữ</label></div><div class="note-design-row"><input id="uploadNoteColor" type="color" value="#b64f73" aria-label="Màu lời nhắn"/><select id="uploadNoteFont" aria-label="Kiểu chữ"><option value="Nunito">Nunito — dễ thương</option><option value="Patrick Hand">Patrick Hand — viết tay</option><option value="Playfair Display">Playfair — cổ điển</option><option value="DM Sans">DM Sans — gọn gàng</option></select></div></div><div class="upload-progress hidden" id="uploadProgress"><div class="progress-track"><span id="uploadProgressBar"></span></div><p id="uploadProgressText">Đang lưu kỷ niệm...</p></div><button class="primary-button full-width" id="uploadSubmit" type="submit">Lưu vào album A5 <span>♡</span></button></form><p class="privacy-footnote">🔒 Cậu có thể chỉnh sửa hoặc xóa bài đăng của mình bất cứ lúc nào.</p></div></div>
+
+  <div class="modal-backdrop hidden" id="editProfileModal" role="dialog" aria-modal="true" aria-labelledby="editProfileTitle"><div class="modal-card profile-modal-card"><button class="modal-close" data-action="close-modal" aria-label="Đóng">×</button><span class="section-overline">YOUR IDENTITY</span><h2 id="editProfileTitle">Tô màu góc nhỏ của cậu</h2><p class="modal-subtitle">Một cái tên thân quen, một chiếc avatar xinh xắn.</p><form id="profileForm"><div class="avatar-editor-row"><div class="avatar-preview" id="editAvatarPreview">♡</div><div><strong>Ảnh đại diện</strong><p>Chọn ảnh từ điện thoại hoặc máy tính.</p><label class="outline-button file-pick-button" for="avatarFile">Chọn ảnh mới ↗</label><input id="avatarFile" class="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp,image/gif"/></div></div><div class="form-field"><label for="displayNameInput">Tên hiển thị <span>*</span></label><input id="displayNameInput" type="text" maxlength="40" required placeholder="Tên mà mọi người sẽ thấy"/></div><div class="form-field"><label for="nicknameInput">Biệt danh <span>không bắt buộc</span></label><input id="nicknameInput" type="text" maxlength="32" placeholder="Ví dụ: Bé Mơ, Cục bông..."/></div><div class="form-field"><label for="bioInput">Một chút về tớ <span>không bắt buộc</span></label><textarea id="bioInput" rows="3" maxlength="180" placeholder="Một câu nói, một điều cậu thích..."></textarea></div><button class="primary-button full-width" id="saveProfileButton" type="submit">Lưu thay đổi <span>♡</span></button></form></div></div>
+
+  <div class="modal-backdrop hidden" id="editMediaModal" role="dialog" aria-modal="true" aria-labelledby="editMediaTitle"><div class="modal-card"><button class="modal-close" data-action="close-modal" aria-label="Đóng">×</button><span class="section-overline">EDIT YOUR MEMORY</span><h2 id="editMediaTitle">Chỉnh sửa kỷ niệm</h2><p class="modal-subtitle">Chỉ chủ bài đăng mới có thể thay đổi những điều này.</p><form id="editMediaForm"><input type="hidden" id="editMediaId"/><div class="form-field"><label for="editMediaCaption">Lời nhắn</label><textarea id="editMediaCaption" rows="3" maxlength="500" placeholder="Thêm đôi dòng vào kỷ niệm này..."></textarea></div><div class="form-field"><div class="note-design-heading"><label for="editMediaColor">Màu chữ</label><label for="editMediaFont">Kiểu chữ</label></div><div class="note-design-row"><input id="editMediaColor" type="color" value="#b64f73"/><select id="editMediaFont"><option value="Nunito">Nunito — dễ thương</option><option value="Patrick Hand">Patrick Hand — viết tay</option><option value="Playfair Display">Playfair — cổ điển</option><option value="DM Sans">DM Sans — gọn gàng</option></select></div></div><button class="primary-button full-width" type="submit">Lưu chỉnh sửa ♡</button></form></div></div>
+
+  <div class="modal-backdrop hidden" id="reactionModal" role="dialog" aria-modal="true" aria-labelledby="reactionModalTitle"><div class="modal-card reactions-modal-card"><button class="modal-close" data-action="close-modal" aria-label="Đóng">×</button><span class="section-overline">LITTLE LOVE NOTES</span><h2 id="reactionModalTitle">Ai đã gửi cảm xúc? ♡</h2><div id="reactionList" class="reaction-list"></div></div></div>
+
+  <div class="modal-backdrop hidden" id="publicProfileModal" role="dialog" aria-modal="true" aria-labelledby="publicProfileName"><div class="modal-card public-profile-card"><button class="modal-close" data-action="close-modal" aria-label="Đóng">×</button><div class="public-profile-cover"><span>✿</span><span>♡</span><span>✦</span></div><div class="public-profile-avatar" id="publicProfileAvatar">♡</div><span class="profile-class-pill">✦ THÀNH VIÊN A5</span><h2 id="publicProfileName">Bạn A5</h2><p id="publicProfileNickname" class="public-profile-nickname"></p><p id="publicProfileBio" class="public-profile-bio"></p><div class="public-profile-stats"><div><strong id="publicPhotoCount">0</strong><span>Ảnh</span></div><div><strong id="publicVideoCount">0</strong><span>Video</span></div><div><strong id="publicMemberSince">—</strong><span>Tham gia</span></div></div><div class="public-provider-row" id="publicProviders"></div><div class="public-profile-photos" id="publicProfilePhotos"></div></div></div>
+
+  <div class="confirm-backdrop hidden" id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle"><div class="confirm-card"><div class="confirm-icon">♡</div><h3 id="confirmTitle">Xóa kỷ niệm này?</h3><p id="confirmMessage">Kỷ niệm sẽ bị xóa khỏi album.</p><div class="confirm-actions"><button class="outline-button" data-action="close-modal">Thôi, giữ lại</button><button class="danger-button" id="confirmDeleteButton">Xóa kỷ niệm</button></div></div></div>
+
+  <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+  <div class="keyboard-help hidden" id="keyboardHelp">Bấm <kbd>Esc</kbd> để đóng cửa sổ</div>
+</body>
+</html>
