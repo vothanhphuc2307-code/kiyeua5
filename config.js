@@ -4,6 +4,7 @@
  * KHÔNG BAO GIỜ đặt service_role key hoặc client secret OAuth trong file này.
  */
 window.A5_CONFIG = {
-  SUPABASE_URL: 'YOUR_SUPABASE_URL',
-  SUPABASE_ANON_KEY: 'YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY'
+  SUPABASE_URL: 'https://lzvwhkiparjoabznixjn.supabase.co
+',
+  SUPABASE_ANON_KEY: 'sb_publishable_nr4ZyRC0IsYr_wI3HMdArg_X7RfFUqd'
 };
