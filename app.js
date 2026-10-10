@@ -22,6 +22,12 @@
   let reactionItems = [];
   let commentCounts = new Map();
   let commentsEnabled = true;
+  let notificationItems = [];
+  let notificationsEnabled = true;
+  let activeViewerMediaId = null;
+  let homeAlbumFilter = 'all';
+  let galleryAlbumFilter = 'all';
+  let backupBusy = false;
   let activeCommentsMediaId = null;
   let editingCommentId = null;
   let homeMonthFilter = 'all';
@@ -85,7 +91,37 @@
     const [year, month] = key.split('-').map(Number);
     return new Date(year, month - 1, 1).toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' });
   }
+  function populateAlbumFilters() {
+    const albums = [...new Set(mediaItems.map(item => String(item.album_name || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'));
+    for (const [id, value] of [['homeAlbumFilter', homeAlbumFilter], ['galleryAlbumFilter', galleryAlbumFilter]]) {
+      const select = $(`#${id}`);
+      if (!select) continue;
+      select.innerHTML = '<option value="all">Tất cả sự kiện</option>' + albums.map(album => `<option value="${escapeAttr(album)}">${escapeHTML(album)}</option>`).join('');
+      select.value = albums.includes(value) ? value : 'all';
+    }
+  }
+  async function ensureJSZip() {
+    if (window.JSZip) return window.JSZip;
+    await new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-a5-jszip]');
+      if (existing) { existing.addEventListener('load', resolve, { once: true }); existing.addEventListener('error', reject, { once: true }); return; }
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+      script.setAttribute('data-a5-jszip', 'true');
+      script.onload = resolve; script.onerror = () => reject(new Error('Không tải được công cụ ZIP. Kiểm tra kết nối mạng rồi thử lại.'));
+      document.head.appendChild(script);
+    });
+    if (!window.JSZip) throw new Error('Thư viện ZIP chưa sẵn sàng.');
+    return window.JSZip;
+  }
+  function saveBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = filename; a.style.display = 'none';
+    document.body.appendChild(a); a.click(); a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
   function populateMonthFilters() {
+    populateAlbumFilters();
     const currentMonth = monthKey(new Date());
     const months = [...new Set([currentMonth, ...mediaItems.map(item => monthKey(item.created_at)).filter(Boolean)])].sort().reverse();
     for (const [id, value] of [['homeMonthFilter', homeMonthFilter], ['galleryMonthFilter', galleryMonthFilter]]) {
@@ -254,7 +290,7 @@
     try {
       const [profileResult, mediaResult] = await Promise.all([
         supabase.from('profiles').select('id,display_name,nickname,bio,avatar_path,profile_color,linked_providers,created_at,updated_at').order('created_at', { ascending: true }),
-        supabase.from('media_items').select('id,user_id,media_type,storage_path,caption,note_color,note_font,created_at,updated_at,profiles(id,display_name,nickname,bio,avatar_path,profile_color,linked_providers,created_at)').order('created_at', { ascending: false }).limit(200)
+        supabase.from('media_items').select('id,user_id,media_type,storage_path,caption,note_color,note_font,album_name,created_at,updated_at,profiles(id,display_name,nickname,bio,avatar_path,profile_color,linked_providers,created_at)').order('created_at', { ascending: false }).limit(200)
       ]);
       if (profileResult.error) throw profileResult.error;
       if (mediaResult.error) throw mediaResult.error;
@@ -283,6 +319,7 @@
       if (token !== pageLoadToken) return;
       await loadReactions();
       await loadCommentCounts();
+      await loadNotifications();
       renderAll();
       if (!currentProfile) toast('Chưa tải được hồ sơ tài khoản. Hãy kiểm tra lại schema SQL trong Supabase.', 'error', 6000);
     } catch (error) {
@@ -354,6 +391,69 @@
     }
   }
 
+  async function loadNotifications() {
+    notificationItems = [];
+    if (!supabase || !currentUser) return;
+    try {
+      const { data, error } = await supabase.from('notifications')
+        .select('id,user_id,actor_id,media_id,notification_type,created_at,read_at')
+        .eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(40);
+      if (error) throw error;
+      notificationsEnabled = true;
+      notificationItems = (data || []).map(row => ({ ...row, actor: profiles.find(profile => profile.id === row.actor_id) || null }));
+    } catch (error) {
+      notificationsEnabled = false;
+      const message = String(error?.message || '');
+      if (!/does not exist|schema cache|relation|column/i.test(message)) console.warn('Notifications need V3 migration or access:', message);
+    }
+    renderNotificationBadge();
+  }
+  function renderNotificationBadge() {
+    const badge = $('#notificationBadge');
+    if (!badge) return;
+    const unread = notificationItems.filter(item => !item.read_at).length;
+    badge.textContent = unread > 99 ? '99+' : String(unread);
+    badge.classList.toggle('hidden', unread === 0);
+    const button = $('#topNotificationButton');
+    if (button) button.setAttribute('aria-label', unread ? `Thông báo, ${unread} chưa đọc` : 'Thông báo');
+  }
+  function renderNotificationsList() {
+    const container = $('#notificationsList');
+    if (!container) return;
+    if (!notificationsEnabled) {
+      container.innerHTML = '<div class="comments-migration-note"><strong>🔔 Thông báo chưa được bật</strong><p>Quản trị viên cần chạy file <code>supabase/upgrade-v3.sql</code> trước.</p></div>';
+      return;
+    }
+    if (!notificationItems.length) {
+      container.innerHTML = '<div class="comments-empty"><span>🌷</span><strong>Chưa có thông báo</strong><p>Khi bạn bè bình luận hoặc thả cảm xúc, lời nhắn sẽ xuất hiện ở đây.</p></div>';
+      return;
+    }
+    container.innerHTML = notificationItems.map(item => {
+      const actor = profiles.find(profile => profile.id === item.actor_id) || item.actor || {};
+      const verb = item.notification_type === 'comment' ? 'đã để lại bình luận' : 'đã thả cảm xúc vào kỷ niệm';
+      return `<button type="button" class="notification-row ${item.read_at ? '' : 'unread'}" data-action="open-notification" data-notification-id="${escapeAttr(item.id)}" data-media-id="${escapeAttr(item.media_id || '')}" data-notification-type="${escapeAttr(item.notification_type)}"><span class="notification-avatar">${actor.avatar_url ? `<img src="${escapeAttr(actor.avatar_url)}" alt=""/>` : shortInitial(displayName(actor))}</span><span class="notification-copy"><strong>${escapeHTML(displayName(actor))}</strong><span>${verb}</span><small>${escapeHTML(formatDate(item.created_at, true))}</small></span><span class="notification-status">${item.read_at ? 'Đã đọc' : '● Mới'}</span></button>`;
+    }).join('');
+  }
+  async function openNotifications() {
+    await loadNotifications();
+    renderNotificationsList();
+    openModal('notificationsModal');
+  }
+  async function openNotification(notificationId, mediaId, type) {
+    const row = notificationItems.find(item => item.id === notificationId);
+    if (!row) return;
+    if (!row.read_at && supabase && currentUser) {
+      const now = new Date().toISOString();
+      const { error } = await supabase.from('notifications').update({ read_at: now }).eq('id', notificationId).eq('user_id', currentUser.id);
+      if (!error) row.read_at = now;
+    }
+    renderNotificationBadge();
+    closeModals();
+    if (!mediaItems.some(item => item.id === mediaId)) return toast('Kỷ niệm này không còn trong album.', 'info');
+    if (type === 'comment') await openComments(mediaId);
+    else openMediaViewer(mediaId);
+  }
+
   function loadingCard(text) { return `<div class="loading-card"><span class="loading-flower">✿</span><p>${escapeHTML(text)}</p></div>`; }
   function errorCard(title, message) { return `<div class="loading-card"><span class="loading-flower">♡</span><p><strong>${escapeHTML(title)}</strong></p><p>${escapeHTML(message)}</p></div>`; }
   function avatarHTML(profile, className = 'avatar') {
@@ -379,10 +479,11 @@
     const mediaLabel = item.media_type === 'video' ? '▶ VIDEO' : '▧ ẢNH';
     const media = item.url
       ? (item.media_type === 'video'
-        ? `<video src="${escapeAttr(item.url)}" controls playsinline preload="metadata" aria-label="Video kỷ niệm của ${escapeAttr(displayName(owner))}"></video>`
+        ? `<video src="${escapeAttr(item.url)}" muted playsinline preload="metadata" tabindex="-1" aria-hidden="true"></video><span class="media-play-overlay" aria-hidden="true">▶<small>Chạm để xem</small></span>`
         : `<img src="${escapeAttr(item.url)}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}" loading="lazy"/>`)
       : `<div class="media-visual-fallback">${item.media_type === 'video' ? '▷' : '✿'}</div>`;
     const caption = item.caption ? `<p class="media-note" style="--note-color:${safeColor(item.note_color)};--note-font:'${safeFont(item.note_font)}'">${escapeHTML(item.caption)}</p>` : '';
+    const album = item.album_name ? `<button type="button" class="event-album-tag" data-action="filter-album" data-album-name="${escapeAttr(item.album_name)}">✦ ${escapeHTML(item.album_name)}</button>` : '';
     const visibleEmojis = [...new Set([...REACTIONS.slice(0, 3), ...reactions.keys()])];
     const reactButtons = visibleEmojis.map(emoji => {
       const group = reactions.get(emoji) || [];
@@ -391,21 +492,40 @@
     }).join('');
     const downloadText = item.media_type === 'video' ? 'Tải video về máy' : 'Tải ảnh về máy';
     return `<article class="memory-card" style="animation-delay:${Math.min(index * 35, 280)}ms" data-media-card="${escapeAttr(item.id)}">
-      <div class="media-visual">${media}<span class="media-type-tag">${mediaLabel}</span>${own ? `<div class="media-owner-actions"><button class="tiny-action" data-action="edit-media" data-media-id="${escapeAttr(item.id)}" aria-label="Sửa kỷ niệm" title="Chỉnh sửa">✎</button><button class="tiny-action" data-action="delete-media" data-media-id="${escapeAttr(item.id)}" aria-label="Xóa kỷ niệm" title="Xóa">⌫</button></div>` : ''}</div>
-      <div class="media-card-body"><button class="media-download-button" type="button" data-action="download-media" data-media-id="${escapeAttr(item.id)}" ${item.url ? '' : 'disabled'}><span aria-hidden="true">⇩</span> ${downloadText}</button>${caption}<div class="media-meta">${avatarHTML(owner)}<span class="media-owner-name" data-action="view-profile" data-user-id="${escapeAttr(item.user_id)}" role="button" tabindex="0">${escapeHTML(displayName(owner))}</span><time class="media-timestamp" datetime="${escapeAttr(iso)}" title="Thời gian chính xác: ${escapeAttr(iso)}">${timestamp}</time></div><div class="card-divider"></div><div class="reaction-row">${reactButtons}<button class="react-more" data-action="more-reactions" data-media-id="${escapeAttr(item.id)}" aria-label="Chọn thêm cảm xúc" title="Thêm cảm xúc">＋</button><button class="card-react-prompt" data-action="who-reacted" data-media-id="${escapeAttr(item.id)}" title="Xem các cảm xúc">ai thả?</button></div><button class="comment-open-button" data-action="open-comments" data-media-id="${escapeAttr(item.id)}"><span>💬 Bình luận</span><strong>${commentCounts.get(item.id) || 0}</strong></button></div>
+      <div class="media-visual media-visual-open" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" role="button" tabindex="0" aria-label="Mở ${item.media_type === 'video' ? 'video' : 'ảnh'} của ${escapeAttr(displayName(owner))}">${media}<span class="media-type-tag">${mediaLabel}</span><span class="media-open-hint" aria-hidden="true">⤢</span>${own ? `<div class="media-owner-actions"><button class="tiny-action" data-action="edit-media" data-media-id="${escapeAttr(item.id)}" aria-label="Sửa kỷ niệm" title="Chỉnh sửa">✎</button><button class="tiny-action" data-action="delete-media" data-media-id="${escapeAttr(item.id)}" aria-label="Xóa kỷ niệm" title="Xóa">⌫</button></div>` : ''}</div>
+      <div class="media-card-body"><button class="media-download-button" type="button" data-action="download-media" data-media-id="${escapeAttr(item.id)}" ${item.url ? '' : 'disabled'}><span aria-hidden="true">⇩</span> ${downloadText}</button>${album}${caption}<div class="media-meta">${avatarHTML(owner)}<span class="media-owner-name" data-action="view-profile" data-user-id="${escapeAttr(item.user_id)}" role="button" tabindex="0">${escapeHTML(displayName(owner))}</span><time class="media-timestamp" datetime="${escapeAttr(iso)}" title="Thời gian chính xác: ${escapeAttr(iso)}">${timestamp}</time></div><div class="card-divider"></div><div class="reaction-row">${reactButtons}<button class="react-more" data-action="more-reactions" data-media-id="${escapeAttr(item.id)}" aria-label="Chọn thêm cảm xúc" title="Thêm cảm xúc">＋</button><button class="card-react-prompt" data-action="who-reacted" data-media-id="${escapeAttr(item.id)}" title="Xem các cảm xúc">ai thả?</button></div><div class="memory-card-footer"><button class="comment-open-button" data-action="open-comments" data-media-id="${escapeAttr(item.id)}"><span>💬 Bình luận</span><strong>${commentCounts.get(item.id) || 0}</strong></button>${!own ? `<button type="button" class="report-open-button" data-action="report-media" data-media-id="${escapeAttr(item.id)}" title="Báo cáo nội dung" aria-label="Báo cáo nội dung">⚑</button>` : ''}</div></div>
     </article>`;
   }
 
   function searchable(item) {
     if (!searchTerm) return true;
     const owner = profiles.find(profile => profile.id === item.user_id) || {};
-    const haystack = [item.caption, displayName(owner), owner.nickname, owner.bio, item.media_type].join(' ').toLocaleLowerCase('vi');
+    const haystack = [item.caption, item.album_name, displayName(owner), owner.nickname, owner.bio, item.media_type].join(' ').toLocaleLowerCase('vi');
     return haystack.includes(searchTerm);
   }
+  function renderOnThisDay() {
+    const grid = $('#onThisDayGrid');
+    if (!grid) return;
+    const today = new Date();
+    const key = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const matches = mediaItems.filter(item => {
+      const date = new Date(item.created_at);
+      return !Number.isNaN(date.getTime()) && date.getFullYear() < today.getFullYear() && `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` === key;
+    }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 4);
+    const message = $('#onThisDayMessage');
+    if (message) message.textContent = matches.length ? `Hôm nay, mình cùng nhớ lại ${matches.length} kỷ niệm từ những năm trước.` : 'Từ hôm nay, hãy lưu thật nhiều điều — rồi kỷ niệm cũ sẽ trở về vào đúng ngày này.';
+    grid.innerHTML = matches.length ? matches.map(item => {
+      const owner = profiles.find(profile => profile.id === item.user_id) || {};
+      const preview = item.url ? (item.media_type === 'video' ? `<video src="${escapeAttr(item.url)}" muted playsinline preload="metadata" aria-hidden="true"></video><span class="on-day-play">▶</span>` : `<img src="${escapeAttr(item.url)}" alt="" loading="lazy"/>`) : '<span>♡</span>';
+      return `<button type="button" class="on-this-day-item" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}"><span class="on-this-day-thumb">${preview}</span><span class="on-this-day-item-copy"><strong>${escapeHTML(item.caption || 'Một ngày đáng nhớ')}</strong><small>${escapeHTML(displayName(owner))} · ${escapeHTML(formatDate(item.created_at, false))}</small></span></button>`;
+    }).join('') : '<div class="on-this-day-empty">💌 Chưa có kỷ niệm từ những năm trước vào ngày hôm nay. Lưu một khoảnh khắc nhé — nó có thể trở lại trong tương lai.</div>';
+  }
+
   function renderHomeMedia() {
     let items = mediaItems.filter(searchable);
     if (homeFilter !== 'all') items = items.filter(item => item.media_type === homeFilter);
     if (homeMonthFilter !== 'all') items = items.filter(item => monthKey(item.created_at) === homeMonthFilter);
+    if (homeAlbumFilter !== 'all') items = items.filter(item => item.album_name === homeAlbumFilter);
     const matchedCount = items.length;
     items = items.slice(0, 6);
     $('#homeMediaGrid').innerHTML = items.length ? items.map(renderMediaCard).join('') : '';
@@ -422,6 +542,7 @@
     if (galleryFilter === 'photo' || galleryFilter === 'video') items = items.filter(item => item.media_type === galleryFilter);
     if (galleryFilter === 'mine') items = items.filter(item => item.user_id === currentUser?.id);
     if (galleryMonthFilter !== 'all') items = items.filter(item => monthKey(item.created_at) === galleryMonthFilter);
+    if (galleryAlbumFilter !== 'all') items = items.filter(item => item.album_name === galleryAlbumFilter);
     if ($('#gallerySort')?.value === 'oldest') items.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     else items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     $('#galleryMediaGrid').innerHTML = items.map(renderMediaCard).join('');
@@ -487,7 +608,7 @@
   }
   function renderAll() {
     populateMonthFilters();
-    renderProfile(); renderHomeMedia(); renderGallery(); renderPeople(); updateActiveTab();
+    renderProfile(); renderHomeMedia(); renderGallery(); renderPeople(); renderOnThisDay(); renderNotificationBadge(); updateActiveTab();
   }
   function switchTab(tab) {
     if (!['home', 'gallery', 'people', 'profile'].includes(tab)) return;
@@ -516,6 +637,9 @@
   function closeModals(force = false) {
     if (isTrimming && !force) { toast('Đang cắt video, đừng đóng trang cho tới khi hoàn tất nhé.', 'info', 3000); return; }
     $$('.modal-backdrop,.confirm-backdrop').forEach(modal => modal.classList.add('hidden'));
+    const viewerVideo = $('#viewerMediaContent video'); if (viewerVideo) { viewerVideo.pause(); viewerVideo.removeAttribute('src'); viewerVideo.load(); }
+    if ($('#viewerMediaContent')) $('#viewerMediaContent').innerHTML = '';
+    activeViewerMediaId = null;
     document.body.style.overflow = '';
     pendingDeleteMediaId = null;
     if (cropObjectUrl) { URL.revokeObjectURL(cropObjectUrl); cropObjectUrl = null; }
@@ -533,6 +657,7 @@
     if ($('#cropStatus')) { $('#cropStatus').dataset.custom = ''; $('#cropStatus').textContent = 'Ảnh gốc được giữ nguyên cho tới khi cậu áp dụng phần cắt.'; }
     updateMediaTools();
     $('#uploadCaption').value = '';
+    $('#uploadAlbumName').value = '';
     $('#uploadNoteColor').value = '#b64f73';
     $('#uploadNoteFont').value = 'Nunito';
     $('#uploadProgress').classList.add('hidden');
@@ -865,6 +990,7 @@
     const caption = $('#uploadCaption').value.trim();
     const noteColor = safeColor($('#uploadNoteColor').value);
     const noteFont = safeFont($('#uploadNoteFont').value);
+    const albumName = String($('#uploadAlbumName')?.value || '').trim().slice(0, 60);
     const submit = $('#uploadSubmit');
     const progress = $('#uploadProgress');
     const bar = $('#uploadProgressBar');
@@ -884,7 +1010,7 @@
         savedPaths.push(path);
         const { error: insertError } = await supabase.from('media_items').insert({
           user_id: currentUser.id, media_type: currentUploadType, storage_path: path,
-          caption, note_color: noteColor, note_font: noteFont
+          caption, note_color: noteColor, note_font: noteFont, album_name: albumName || null
         });
         if (insertError) {
           await supabase.storage.from(MEDIA_BUCKET).remove([path]);
@@ -910,6 +1036,152 @@
       isUploading = false; submit.disabled = false;
       submit.innerHTML = 'Lưu vào album A5 <span>♡</span>';
       bar.style.width = '0%';
+    }
+  }
+
+  async function exportPersonalBackup() {
+    if (!supabase || !currentUser) return toast('Đăng nhập để sao lưu kỷ niệm nhé.', 'info');
+    if (backupBusy) return;
+    backupBusy = true;
+    const button = $('#exportBackupButton');
+    const status = $('#backupStatus');
+    if (button) { button.disabled = true; button.textContent = 'Đang chuẩn bị ZIP…'; }
+    if (status) status.textContent = 'Đang gom bài đăng và tải tệp vào bản sao lưu. Giữ trang mở nhé.';
+    try {
+      const JSZip = await ensureJSZip();
+      let allMedia = [];
+      for (let start = 0; ; start += 300) {
+        const { data, error } = await supabase.from('media_items')
+          .select('id,media_type,storage_path,caption,note_color,note_font,album_name,created_at,updated_at')
+          .eq('user_id', currentUser.id).order('created_at', { ascending: true }).range(start, start + 299);
+        if (error) throw error;
+        const page = data || [];
+        allMedia.push(...page);
+        if (page.length < 300) break;
+        if (allMedia.length >= 2000) throw new Error('Có quá nhiều bài để gom vào một ZIP trên trình duyệt. Hãy sao lưu theo đợt nhỏ hơn.');
+      }
+      const zip = new JSZip();
+      const manifest = {
+        format: 'a5-personal-backup', version: 1, created_at: new Date().toISOString(),
+        profile: { display_name: currentProfile?.display_name || '', nickname: currentProfile?.nickname || '', bio: currentProfile?.bio || '', profile_color: safeColor(currentProfile?.profile_color) },
+        avatar_archive_path: null, media: []
+      };
+      const backupFolder = zip.folder('media');
+      let totalBytes = 0;
+      for (let i = 0; i < allMedia.length; i++) {
+        const item = allMedia[i];
+        if (status) status.textContent = `Đang sao lưu tệp ${i + 1}/${allMedia.length}…`;
+        const { data: signed, error: signedError } = await supabase.storage.from(MEDIA_BUCKET).createSignedUrl(item.storage_path, 300);
+        if (signedError || !signed?.signedUrl) throw signedError || new Error('Không tạo được liên kết tải tệp.');
+        const response = await fetch(signed.signedUrl);
+        if (!response.ok) throw new Error(`Không tải được tệp số ${i + 1} (${response.status}).`);
+        const blob = await response.blob();
+        totalBytes += blob.size;
+        if (totalBytes > 250 * 1024 * 1024) throw new Error('Bản sao lưu vượt 250 MB; hãy sao lưu từng đợt hoặc tải riêng các tệp lớn.');
+        const originalFilename = safeFileName(item.storage_path.split('/').pop() || `memory-${i + 1}`);
+        const archivePath = `media/${String(i + 1).padStart(4, '0')}-${originalFilename}`;
+        backupFolder.file(archivePath.split('/').slice(1).join('/'), blob, { compression: 'STORE' });
+        manifest.media.push({ source_id: item.id, media_type: item.media_type, caption: item.caption || '', note_color: safeColor(item.note_color), note_font: safeFont(item.note_font), album_name: item.album_name || '', created_at: item.created_at, filename: originalFilename, mime_type: blob.type || (item.media_type === 'video' ? 'video/mp4' : 'image/jpeg'), archive_path: archivePath });
+      }
+      if (currentProfile?.avatar_path) {
+        const { data: signedAvatar, error: avatarError } = await supabase.storage.from(AVATAR_BUCKET).createSignedUrl(currentProfile.avatar_path, 300);
+        if (!avatarError && signedAvatar?.signedUrl) {
+          const avatarResponse = await fetch(signedAvatar.signedUrl);
+          if (avatarResponse.ok) {
+            const avatarBlob = await avatarResponse.blob();
+            if (totalBytes + avatarBlob.size <= 250 * 1024 * 1024) {
+              zip.file('profile/avatar', avatarBlob, { compression: 'STORE' });
+              manifest.avatar_archive_path = 'profile/avatar'; manifest.avatar_mime_type = avatarBlob.type || 'image/jpeg';
+            }
+          }
+        }
+      }
+      zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+      zip.file('README.txt', `A5 personal memory backup v1\nIncludes the owner profile fields and the media posts/assets owned by the account that created this backup. Comments/reactions and other members' posts are not part of this personal backup. Restore only when you intend to add copies of your own missing media. Keep this ZIP private.`);
+      if (status) status.textContent = 'Đang nén ZIP…';
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' }, meta => {
+        if (status) status.textContent = `Đang tạo ZIP: ${Math.round(meta.percent)}%`;
+      });
+      saveBlob(blob, `A5-sao-luu-ca-nhan-${new Date().toISOString().slice(0, 10)}.zip`);
+      if (status) status.textContent = `Đã tạo bản sao lưu gồm ${allMedia.length} bài đăng. Hãy cất ZIP ở nơi an toàn.`;
+      toast(`Đã tạo bản sao lưu ${allMedia.length} bài đăng ♡`, 'success', 5000);
+    } catch (error) {
+      console.error('Personal backup failed:', error);
+      if (status) status.textContent = `Chưa tạo được bản sao lưu: ${error?.message || 'Lỗi không xác định'}`;
+      toast(`Sao lưu chưa thành công: ${(error?.message || '').slice(0, 130)}`, 'error', 6500);
+    } finally {
+      backupBusy = false;
+      if (button) { button.disabled = false; button.textContent = '⬇ Tải bản sao lưu'; }
+    }
+  }
+
+  async function restorePersonalBackup(file) {
+    if (!supabase || !currentUser || !file) return;
+    if (backupBusy) return;
+    backupBusy = true;
+    const button = $('#chooseRestoreBackupButton');
+    const status = $('#backupStatus');
+    if (button) { button.disabled = true; button.textContent = 'Đang kiểm tra ZIP…'; }
+    try {
+      const JSZip = await ensureJSZip();
+      const zip = await JSZip.loadAsync(file);
+      const manifestFile = zip.file('manifest.json');
+      if (!manifestFile) throw new Error('ZIP không có manifest.json nên không phải bản sao lưu A5 hợp lệ.');
+      const manifest = JSON.parse(await manifestFile.async('string'));
+      if (manifest.format !== 'a5-personal-backup' || manifest.version !== 1 || !Array.isArray(manifest.media)) throw new Error('Định dạng bản sao lưu không được hỗ trợ.');
+      if (manifest.media.length > 500) throw new Error('Bản này có quá nhiều bài đăng để khôi phục an toàn trong một lần.');
+      if (!window.confirm(`Bản ZIP có ${manifest.media.length} bài đăng thuộc bản sao lưu cá nhân. Khôi phục sẽ TẠO CÁC BẢN SAO MỚI, không dò tìm trùng lặp; chỉ tiếp tục nếu cậu muốn phục hồi những bài bị mất. Tiếp tục?`)) return;
+      let restored = 0; const errors = [];
+      for (let i = 0; i < manifest.media.length; i++) {
+        const entry = manifest.media[i];
+        const fileEntry = typeof entry.archive_path === 'string' ? zip.file(entry.archive_path) : null;
+        if (!fileEntry || !['photo', 'video'].includes(entry.media_type)) { errors.push(`${i + 1}: tệp trong ZIP không hợp lệ`); continue; }
+        try {
+          if (!String(entry.archive_path).startsWith('media/') || String(entry.archive_path).includes('..')) throw new Error('Đường dẫn tệp trong ZIP không hợp lệ.');
+          const blob = await fileEntry.async('blob');
+          const mime = String(entry.mime_type || blob.type || (entry.media_type === 'video' ? 'video/mp4' : 'image/jpeg'));
+          const allowedTypes = entry.media_type === 'video' ? VIDEO_TYPES : PHOTO_TYPES;
+          const maxBytes = entry.media_type === 'video' ? VIDEO_MAX : PHOTO_MAX;
+          if (!allowedTypes.includes(mime)) throw new Error('Loại tệp không được hỗ trợ trong bản sao lưu.');
+          if (blob.size <= 0 || blob.size > maxBytes) throw new Error(`Tệp vượt giới hạn ${humanBytes(maxBytes)} hoặc bị trống.`);
+          const filename = safeFileName(entry.filename || `restore-${i + 1}`);
+          const path = `${currentUser.id}/restore-${Date.now()}-${uniqueId()}-${filename}`;
+          const { error: uploadError } = await supabase.storage.from(MEDIA_BUCKET).upload(path, blob, { cacheControl: '3600', upsert: false, contentType: mime });
+          if (uploadError) throw uploadError;
+          const payload = { user_id: currentUser.id, media_type: entry.media_type, storage_path: path, caption: String(entry.caption || '').slice(0, 500), note_color: safeColor(entry.note_color), note_font: safeFont(entry.note_font), album_name: String(entry.album_name || '').slice(0, 60) || null };
+          if (entry.created_at && !Number.isNaN(new Date(entry.created_at).getTime())) payload.created_at = new Date(entry.created_at).toISOString();
+          const { error: insertError } = await supabase.from('media_items').insert(payload);
+          if (insertError) { await supabase.storage.from(MEDIA_BUCKET).remove([path]); throw insertError; }
+          restored++;
+        } catch (error) { errors.push(`${i + 1}: ${String(error?.message || 'khôi phục thất bại').slice(0, 90)}`); }
+        if (status) status.textContent = `Đã khôi phục ${restored}/${manifest.media.length} bài…`;
+      }
+      if (manifest.profile && currentProfile) {
+        const patch = { display_name: String(manifest.profile.display_name || currentProfile.display_name).slice(0, 40), nickname: String(manifest.profile.nickname || '').slice(0, 32), bio: String(manifest.profile.bio || '').slice(0, 180), profile_color: safeColor(manifest.profile.profile_color) };
+        if (manifest.avatar_archive_path && zip.file(manifest.avatar_archive_path)) {
+          try {
+            const avatarBlob = await zip.file(manifest.avatar_archive_path).async('blob');
+            if (avatarBlob.size <= AVATAR_MAX) {
+              const avatarPath = `${currentUser.id}/restore-${Date.now()}-${uniqueId()}-avatar`;
+              const { error: avatarUploadError } = await supabase.storage.from(AVATAR_BUCKET).upload(avatarPath, avatarBlob, { upsert: false, contentType: manifest.avatar_mime_type || avatarBlob.type || 'image/jpeg' });
+              if (!avatarUploadError) patch.avatar_path = avatarPath;
+            }
+          } catch (error) { console.warn('Could not restore profile avatar:', error); }
+        }
+        const { error: profileError } = await supabase.from('profiles').update(patch).eq('id', currentUser.id);
+        if (profileError) errors.push(`Hồ sơ: ${profileError.message}`);
+      }
+      signedUrlCache.clear(); await loadData(false);
+      if (status) status.textContent = `Khôi phục xong ${restored}/${manifest.media.length} bài.${errors.length ? ` Có ${errors.length} mục cần kiểm tra.` : ''}`;
+      toast(`Khôi phục ${restored}/${manifest.media.length} bài đăng. ${errors.length ? 'Một số mục gặp lỗi; xem phần trạng thái trong hồ sơ.' : 'Hoàn tất ♡'}`, errors.length ? 'info' : 'success', 6500);
+    } catch (error) {
+      console.error('Restore personal backup failed:', error);
+      if (status) status.textContent = `Không khôi phục được ZIP: ${error?.message || 'Lỗi không xác định'}`;
+      toast(`Không khôi phục được ZIP: ${(error?.message || '').slice(0, 130)}`, 'error', 6500);
+    } finally {
+      backupBusy = false;
+      if (button) { button.disabled = false; button.textContent = '↻ Khôi phục từ ZIP'; }
+      if ($('#restoreBackupFile')) $('#restoreBackupFile').value = '';
     }
   }
 
@@ -967,6 +1239,7 @@
     if (!item || item.user_id !== currentUser?.id) return toast('Chỉ chủ bài đăng mới có thể chỉnh sửa.', 'error');
     $('#editMediaId').value = item.id;
     $('#editMediaCaption').value = item.caption || '';
+    $('#editMediaAlbum').value = item.album_name || '';
     $('#editMediaColor').value = safeColor(item.note_color);
     $('#editMediaFont').value = safeFont(item.note_font);
     openModal('editMediaModal');
@@ -977,7 +1250,7 @@
     const item = mediaItems.find(media => media.id === id);
     if (!item || item.user_id !== currentUser?.id) return toast('Cậu không có quyền chỉnh sửa kỷ niệm này.', 'error');
     const { error } = await supabase.from('media_items').update({
-      caption: $('#editMediaCaption').value.trim(), note_color: safeColor($('#editMediaColor').value), note_font: safeFont($('#editMediaFont').value)
+      caption: $('#editMediaCaption').value.trim(), album_name: String($('#editMediaAlbum').value || '').trim().slice(0, 60) || null, note_color: safeColor($('#editMediaColor').value), note_font: safeFont($('#editMediaFont').value)
     }).eq('id', id).eq('user_id', currentUser.id);
     if (error) { console.error(error); return toast('Chỉnh sửa chưa được lưu. Cậu thử lại nhé.', 'error'); }
     closeModals(); toast('Đã làm mới lời nhắn cho kỷ niệm ♡', 'success'); await loadData(false);
@@ -1120,6 +1393,62 @@
     toast('Đã xóa bình luận.', 'success');
   }
 
+  function openMediaViewer(mediaId) {
+    const item = mediaItems.find(entry => entry.id === mediaId);
+    if (!item) return toast('Không tìm thấy kỷ niệm này.', 'error');
+    if (!item.url) return toast('Chưa tải được tệp xem trước. Hãy tải lại album rồi thử lại.', 'error');
+    activeViewerMediaId = mediaId;
+    const owner = profiles.find(profile => profile.id === item.user_id) || item.profiles || {};
+    const content = $('#viewerMediaContent');
+    content.innerHTML = item.media_type === 'video'
+      ? `<video src="${escapeAttr(item.url)}" controls autoplay playsinline preload="metadata" aria-label="Video kỷ niệm"></video>`
+      : `<img src="${escapeAttr(item.url)}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}"/>`;
+    $('#viewerTitle').textContent = item.album_name || (item.media_type === 'video' ? 'Một đoạn video của A5' : 'Một mảnh thanh xuân');
+    $('#viewerCaption').textContent = item.caption || 'Một khoảnh khắc được lưu lại ♡';
+    $('#viewerMeta').textContent = `${displayName(owner)} · ${formatDate(item.created_at, true)}${item.album_name ? ` · Album: ${item.album_name}` : ''}`;
+    $('#viewerDownloadButton').dataset.mediaId = item.id;
+    $('#viewerDownloadButton').disabled = !item.url;
+    $('#viewerCommentsButton').dataset.mediaId = item.id;
+    openModal('mediaViewerModal');
+    const video = content.querySelector('video');
+    if (video) video.play().catch(() => {});
+  }
+  function openReportModal(mediaId) {
+    const item = mediaItems.find(entry => entry.id === mediaId);
+    if (!item) return toast('Không tìm thấy nội dung cần báo cáo.', 'error');
+    if (item.user_id === currentUser?.id) return toast('Cậu không cần báo cáo bài đăng của chính mình.', 'info');
+    $('#reportMediaId').value = mediaId;
+    $('#reportReason').value = '';
+    $('#reportDetails').value = '';
+    openModal('reportMediaModal');
+  }
+  async function submitMediaReport(event) {
+    event.preventDefault();
+    if (!supabase || !currentUser) return toast('Đăng nhập để gửi báo cáo nhé.', 'info');
+    const mediaId = $('#reportMediaId').value;
+    const item = mediaItems.find(entry => entry.id === mediaId);
+    if (!item || item.user_id === currentUser.id) return toast('Nội dung báo cáo không hợp lệ.', 'error');
+    const reason = $('#reportReason').value;
+    if (!reason) return toast('Chọn lý do báo cáo trước nhé.', 'error');
+    const button = $('#submitReportButton'); button.disabled = true;
+    try {
+      const { error } = await supabase.from('media_reports').insert({ media_id: mediaId, reporter_id: currentUser.id, reason, details: $('#reportDetails').value.trim().slice(0, 500) || null });
+      if (error) throw error;
+      closeModals(); toast('Đã gửi báo cáo để quản trị viên xem xét. Bài đăng chưa tự động bị xóa.', 'success', 5000);
+    } catch (error) {
+      console.error('Media report failed:', error);
+      toast(`Chưa gửi được báo cáo. Quản trị viên cần chạy migration V3: ${(error?.message || '').slice(0, 90)}`, 'error', 6000);
+    } finally { button.disabled = false; }
+  }
+  async function markAllNotificationsRead() {
+    if (!supabase || !currentUser || !notificationsEnabled) return;
+    const now = new Date().toISOString();
+    const { error } = await supabase.from('notifications').update({ read_at: now }).eq('user_id', currentUser.id).is('read_at', null);
+    if (error) return toast('Chưa đánh dấu được thông báo đã đọc.', 'error');
+    notificationItems = notificationItems.map(item => ({ ...item, read_at: item.read_at || now }));
+    renderNotificationBadge(); renderNotificationsList(); toast('Đã đánh dấu tất cả thông báo đã đọc.', 'success');
+  }
+
   function openReactionPicker(mediaId) {
     if (!mediaItems.some(item => item.id === mediaId)) return toast('Không tìm thấy kỷ niệm này.', 'error');
     $('#reactionPickerGrid').innerHTML = REACTIONS.map(emoji => `<button type="button" class="reaction-picker-choice" data-action="pick-reaction" data-media-id="${escapeAttr(mediaId)}" data-emoji="${escapeAttr(emoji)}"><span>${escapeHTML(emoji)}</span><small>${escapeHTML(reactionName(emoji))}</small></button>`).join('');
@@ -1170,7 +1499,7 @@
     const providers = new Set(profile.linked_providers || []);
     $('#publicProviders').innerHTML = `<span class="provider-chip ${providers.has('google') ? 'connected' : ''}">${providers.has('google') ? '✓ ' : ''}Google ${providers.has('google') ? 'đã liên kết' : 'chưa liên kết'}</span><span class="provider-chip ${providers.has('facebook') ? 'connected' : ''}">${providers.has('facebook') ? '✓ ' : ''}Facebook ${providers.has('facebook') ? 'đã liên kết' : 'chưa liên kết'}</span>`;
     const photos = own.slice(0, 8);
-    $('#publicProfilePhotos').innerHTML = photos.map(item => item.url ? (item.media_type === 'video' ? `<div class="public-profile-photo video-thumb"><video src="${escapeAttr(item.url)}" muted playsinline preload="metadata"></video><span>▶</span></div>` : `<div class="public-profile-photo"><img src="${escapeAttr(item.url)}" alt="Kỷ niệm" loading="lazy"/></div>`) : '<div class="public-profile-photo">✿</div>').join('');
+    $('#publicProfilePhotos').innerHTML = photos.map(item => item.url ? (item.media_type === 'video' ? `<button type="button" class="public-profile-photo video-thumb" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở video kỷ niệm"><video src="${escapeAttr(item.url)}" muted playsinline preload="metadata" aria-hidden="true"></video><span>▶</span></button>` : `<button type="button" class="public-profile-photo" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở ảnh kỷ niệm"><img src="${escapeAttr(item.url)}" alt="Kỷ niệm" loading="lazy"/></button>`) : '<div class="public-profile-photo">✿</div>').join('');
     $('#publicProfilePhotos').classList.toggle('hidden', photos.length === 0);
     openModal('publicProfileModal');
   }
@@ -1195,6 +1524,8 @@
     $('#logoutButton')?.addEventListener('click', signOut);
     $('#topAvatarButton')?.addEventListener('click', () => switchTab('profile'));
     $('#topUploadButton')?.addEventListener('click', () => openUpload('photo'));
+    $('#reportMediaForm')?.addEventListener('submit', submitMediaReport);
+    $('#restoreBackupFile')?.addEventListener('change', event => { const file = event.target.files?.[0]; if (file) restorePersonalBackup(file); });
     $('#uploadForm')?.addEventListener('submit', uploadSelectedFiles);
     $('#openCropButton')?.addEventListener('click', openImageCropper);
     $('#applyCropButton')?.addEventListener('click', applyImageCrop);
@@ -1216,6 +1547,8 @@
     $('#cancelCommentEdit')?.addEventListener('click', () => { editingCommentId = null; $('#editingCommentId').value = ''; $('#commentInput').value = ''; $('#commentSubmitButton').textContent = 'Gửi bình luận ♡'; $('#cancelCommentEdit').classList.add('hidden'); });
     $('#homeMonthFilter')?.addEventListener('change', event => { homeMonthFilter = event.target.value || 'all'; renderHomeMedia(); });
     $('#galleryMonthFilter')?.addEventListener('change', event => { galleryMonthFilter = event.target.value || 'all'; renderGallery(); });
+    $('#homeAlbumFilter')?.addEventListener('change', event => { homeAlbumFilter = event.target.value || 'all'; renderHomeMedia(); });
+    $('#galleryAlbumFilter')?.addEventListener('change', event => { galleryAlbumFilter = event.target.value || 'all'; renderGallery(); });
     $('#editMediaForm')?.addEventListener('submit', saveMediaEdit);
     $('#confirmDeleteButton')?.addEventListener('click', confirmDeleteMedia);
     $('#gallerySort')?.addEventListener('change', renderGallery);
@@ -1276,7 +1609,16 @@
       else if (action === 'pick-reaction') { await toggleReaction(actionButton.dataset.mediaId, actionButton.dataset.emoji); closeModals(); }
       else if (action === 'who-reacted') openReactions(actionButton.dataset.mediaId, actionButton.dataset.emoji || '');
       else if (action === 'download-media') await downloadMedia(actionButton.dataset.mediaId, actionButton);
-      else if (action === 'open-comments') await openComments(actionButton.dataset.mediaId);
+      else if (action === 'open-viewer') openMediaViewer(actionButton.dataset.mediaId);
+      else if (action === 'report-media') openReportModal(actionButton.dataset.mediaId);
+      else if (action === 'open-notifications') await openNotifications();
+      else if (action === 'open-notification') await openNotification(actionButton.dataset.notificationId, actionButton.dataset.mediaId, actionButton.dataset.notificationType);
+      else if (action === 'mark-all-notifications-read') await markAllNotificationsRead();
+      else if (action === 'export-backup') await exportPersonalBackup();
+      else if (action === 'choose-restore-backup') $('#restoreBackupFile')?.click();
+      else if (action === 'open-report-info') openModal('reportInfoModal');
+      else if (action === 'filter-album') { const album = actionButton.dataset.albumName || 'all'; homeAlbumFilter = album; galleryAlbumFilter = album; $('#homeAlbumFilter').value = [...mediaItems].some(item => item.album_name === album) ? album : 'all'; $('#galleryAlbumFilter').value = [...mediaItems].some(item => item.album_name === album) ? album : 'all'; closeModals(); switchTab('gallery'); renderGallery(); }
+      else if (action === 'open-comments') { if (actionButton.id === 'viewerCommentsButton') closeModals(); await openComments(actionButton.dataset.mediaId); }
       else if (action === 'edit-comment') beginEditComment(actionButton.dataset.commentId);
       else if (action === 'delete-comment') await deleteComment(actionButton.dataset.commentId);
       else if (action === 'preview-profile') openPublicProfile(currentUser?.id);
@@ -1288,6 +1630,9 @@
       if (event.key === 'Escape') closeModals();
       if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-action="view-profile"][role="button"]')) {
         event.preventDefault(); openPublicProfile(event.target.dataset.userId);
+      }
+      if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-action="open-viewer"][role="button"]')) {
+        event.preventDefault(); openMediaViewer(event.target.dataset.mediaId);
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault(); $('#globalSearch')?.focus();
