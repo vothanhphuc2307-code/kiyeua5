@@ -10,6 +10,7 @@ create table if not exists public.profiles (
   display_name text not null default 'Bạn A5' check (char_length(display_name) between 1 and 40),
   nickname text not null default '' check (char_length(nickname) <= 32),
   bio text not null default '' check (char_length(bio) <= 180),
+  profile_color text not null default '#f6dce5' check (profile_color ~ '^#[0-9a-fA-F]{6}$'),
   avatar_path text,
   linked_providers text[] not null default '{}'::text[],
   created_at timestamptz not null default now(),
@@ -91,7 +92,7 @@ create table if not exists public.reactions (
   id uuid primary key default gen_random_uuid(),
   media_id uuid not null references public.media_items(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,
-  emoji text not null check (emoji in ('🩷', '😂', '🥹', '✨', '🫶')),
+  emoji text not null check (emoji in ('🩷', '❤️', '😂', '😭', '🥹', '😍', '✨', '🫶', '🔥', '🤡', '👍', '💯')),
   created_at timestamptz not null default now(),
   constraint reactions_one_per_user_emoji unique (media_id, user_id, emoji)
 );
@@ -99,10 +100,27 @@ create table if not exists public.reactions (
 create index if not exists reactions_media_id_idx on public.reactions (media_id, created_at desc);
 create index if not exists reactions_user_id_idx on public.reactions (user_id);
 
+-- ── Comments on memories ────────────────────────────────────────────────────
+create table if not exists public.media_comments (
+  id uuid primary key default gen_random_uuid(),
+  media_id uuid not null references public.media_items(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  body text not null check (char_length(trim(body)) between 1 and 800),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists media_comments_media_id_idx on public.media_comments (media_id, created_at asc);
+create index if not exists media_comments_user_id_idx on public.media_comments (user_id, created_at desc);
+drop trigger if exists media_comments_set_updated_at on public.media_comments;
+create trigger media_comments_set_updated_at
+before update on public.media_comments
+for each row execute function public.set_updated_at();
+
 -- ── Row Level Security: ownership is enforced by PostgreSQL, not only UI ────
 alter table public.profiles enable row level security;
 alter table public.media_items enable row level security;
 alter table public.reactions enable row level security;
+alter table public.media_comments enable row level security;
 
 drop policy if exists "A5 members can read profiles" on public.profiles;
 create policy "A5 members can read profiles"
@@ -156,11 +174,36 @@ create policy "Members can remove their own reactions"
 on public.reactions for delete to authenticated
 using (user_id = (select auth.uid()));
 
+-- Members may read comments on memories visible to the A5 group.
+drop policy if exists "A5 members can read comments" on public.media_comments;
+create policy "A5 members can read comments"
+on public.media_comments for select to authenticated
+using (true);
+
+drop policy if exists "Members can add comments as themselves" on public.media_comments;
+create policy "Members can add comments as themselves"
+on public.media_comments for insert to authenticated
+with check (user_id = (select auth.uid()) and exists (select 1 from public.media_items m where m.id = media_id));
+
+drop policy if exists "Authors can edit their own comments" on public.media_comments;
+create policy "Authors can edit their own comments"
+on public.media_comments for update to authenticated
+using (user_id = (select auth.uid()))
+with check (user_id = (select auth.uid()));
+
+drop policy if exists "Authors or memory owners can delete comments" on public.media_comments;
+create policy "Authors or memory owners can delete comments"
+on public.media_comments for delete to authenticated
+using (user_id = (select auth.uid()) or exists (
+  select 1 from public.media_items m where m.id = media_id and m.user_id = (select auth.uid())
+));
+
 -- SQL-created tables need explicit grants; RLS policies still filter all rows/actions.
 grant usage on schema public to authenticated;
 grant select, insert, update on public.profiles to authenticated;
 grant select, insert, update, delete on public.media_items to authenticated;
 grant select, insert, delete on public.reactions to authenticated;
+grant select, insert, update, delete on public.media_comments to authenticated;
 
 -- ── Private Storage buckets ─────────────────────────────────────────────────
 -- The app signs read links for authenticated users. Objects live under <auth.uid()>/...

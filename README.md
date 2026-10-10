@@ -12,18 +12,33 @@ Một website lưu bút cuối cấp, thiết kế responsive cho máy tính và
 - Đăng ảnh riêng với mục tải ảnh; đăng video riêng với mục tải video.
 - Lưu thời gian do cơ sở dữ liệu ghi (`created_at`, múi giờ đầy đủ), hiển thị đến giây; rê chuột vào thời gian để xem timestamp ISO đầy đủ.
 - Chú thích dưới ảnh/video, tùy chỉnh màu chữ và font.
-- Reaction 🩷 😂 🥹 ✨ 🫶; mở danh sách để xem ai đã thả từng cảm xúc.
+- Reaction mở rộng: 🩷 ❤️ 😂 😭 🥹 😍 ✨ 🫶 🔥 🤡 👍 💯; mở danh sách để xem ai đã thả từng cảm xúc, dùng nút + để chọn nhanh emoji.
 - Trình crop ảnh trước khi upload: chọn tỉ lệ 1:1, 4:3, 16:9 hoặc theo ảnh gốc; kéo ảnh để căn khung và phóng to.
 - Trình cắt video trước khi upload: chọn điểm bắt đầu/kết thúc; đoạn cắt được xuất thành tệp mới trong trình duyệt, còn tệp gốc được giữ nếu hủy. Do dùng MediaRecorder, việc xuất diễn ra theo thời gian thực và có thể mã hóa lại; dùng Chrome/Edge mới nhất để tương thích tốt hơn.
-- Nút **Tải video về máy** hiện trên mọi bài video cho thành viên có quyền xem bài đó. Video vẫn dùng URL ký hạn của Storage, không mở bucket công khai. Nếu trình duyệt chặn tải blob cross-origin, nút sẽ mở video để người xem lưu từ trình phát.
+- Nút **Tải ảnh/video về máy** hiện trên mọi bài đăng cho thành viên có quyền xem bài đó. Dùng URL tải xuống ký hạn của Supabase; không mở bucket công khai. Nếu trình duyệt không bắt đầu tải trực tiếp, nút sẽ mở tệp trong tab mới để người xem lưu từ trình duyệt.
 - Tìm kiếm nhanh; sắp xếp mới nhất/cũ nhất; lọc ảnh, video và bài của mình.
+- Lọc kỷ niệm theo tháng tại trang chủ và album; tháng hiện tại luôn được đề xuất.
+- Bình luận trên từng ảnh/video, sửa bình luận của chính mình và xóa bình luận do mình viết (chủ bài đăng có thể xóa bình luận trên bài của mình).
+- Tùy chỉnh màu chủ đạo trang cá nhân và nút **Xem như người khác** để xem bản hồ sơ công khai. Email đăng nhập vẫn không hiển thị trong hồ sơ công khai.
 - Modal, thông báo, animation, trạng thái rỗng, giao diện co giãn cho màn hình nhỏ và hỗ trợ `prefers-reduced-motion`.
 - **Phân quyền tại backend:** người dùng chỉ được sửa/xóa hàng `media_items` của chính mình; tệp Storage phải nằm trong thư mục mang UID của người đăng. Người xem khác không thể chiếm quyền chỉ bằng cách thay HTML trong trình duyệt.
+
+
+## Nâng cấp website A5 đang hoạt động (v2)
+
+Nếu cậu đã có thành viên và ảnh/video trên Supabase, **không chạy lại toàn bộ schema.sql chỉ để cập nhật tính năng**. Làm theo thứ tự:
+
+1. Mở `supabase/upgrade-v2.sql`, sao chép toàn bộ và chạy một lần trong Supabase Dashboard → SQL Editor của đúng project A5. Migration này thêm màu profile, mở rộng danh sách reaction và tạo bảng bình luận cùng RLS; nó không xóa bài đăng hiện có.
+2. Cập nhật các file `index.html`, `app.js`, `styles.css`, `README.md` và thư mục `supabase` lên repository GitHub đang nối với Vercel, giữ nguyên file `config.js` production của cậu. Nếu dùng ZIP này để thay toàn bộ repository, nhớ khôi phục `config.js` của chính cậu sau khi tải lên; file trong gói là mẫu, không chứa khóa dự án hoạt động.
+3. Chờ Vercel Deployment có trạng thái **Ready**, rồi mở website và nhấn `Ctrl + Shift + R`.
+4. Thử bằng hai tài khoản: đăng bình luận, sửa/xóa bình luận của mình, reaction mới, tải ảnh/video, lọc tháng và xem hồ sơ như người khác.
+
+`media_comments` được bảo vệ bởi Row Level Security. Thành viên đã đăng nhập mới đọc/đăng bình luận; người viết sửa/xóa bình luận của mình, chủ bài đăng có thể xóa bình luận trên bài của họ. Đừng đưa secret/service-role key vào frontend.
 
 ## A. Tạo backend Supabase
 
 1. Vào [Supabase](https://supabase.com/) và tạo project mới. Ghi lại mật khẩu database ở nơi riêng tư.
-2. Mở **SQL Editor** trong Dashboard, tạo query mới, sao chép toàn bộ nội dung `supabase/schema.sql` vào rồi chạy. Script tạo các bảng `profiles`, `media_items`, `reactions`, trigger tạo hồ sơ khi thành viên đăng nhập lần đầu, các policy RLS và hai bucket Storage riêng tư.
+2. Mở **SQL Editor** trong Dashboard, tạo query mới, sao chép toàn bộ nội dung `supabase/schema.sql` vào rồi chạy. Script tạo các bảng `profiles`, `media_items`, `reactions`, `media_comments`, trigger tạo hồ sơ khi thành viên đăng nhập lần đầu, các policy RLS và hai bucket Storage riêng tư.
 3. Vào **Project Settings → API** (tên mục có thể thay đổi theo giao diện Dashboard). Sao chép **Project URL** và **publishable key/anon key**. Chỉ dùng key công khai dành cho trình duyệt.
 4. Mở `config.js` và thay các placeholder:
 
@@ -79,7 +94,15 @@ python -m http.server 5500
 
 Sau đó vào `http://localhost:5500`. Cậu cũng có thể dùng một local static server tương đương. Nhớ thêm URL local vào Supabase Redirect URLs và Google Authorized JavaScript origins.
 
-## E. Đưa lên Netlify
+## E. Cập nhật website hiện có trên Vercel + GitHub
+
+1. Chạy `supabase/upgrade-v2.sql` trong SQL Editor của đúng project đang chứa dữ liệu A5. Chờ thông báo thành công.
+2. Mở repository GitHub được Vercel kết nối. Cập nhật `index.html`, `app.js`, `styles.css`, `README.md` và `supabase/` bằng các file mới. **Giữ lại `config.js` đang hoạt động trên repository**, đừng thay nó bằng file mẫu trong ZIP.
+3. Commit thay đổi vào nhánh production (thường là `main`). Vercel sẽ tự deploy; chờ trạng thái **Ready**.
+4. Mở `https://kiyeua5.vercel.app/`, nhấn `Ctrl + Shift + R` và kiểm tra bình luận, reaction, lọc tháng, download và profile.
+5. Nếu có lỗi SQL, hãy dừng và đọc lỗi trước khi tiếp tục; không xóa dữ liệu hoặc tạo project Supabase mới để chữa lỗi.
+
+## F. Đưa lên Netlify
 
 1. Giải nén ZIP vào một thư mục.
 2. Mở `config.js`, điền Supabase URL và publishable/anon key.
@@ -89,11 +112,11 @@ Sau đó vào `http://localhost:5500`. Cậu cũng có thể dùng một local s
 
 `netlify.toml` đã đặt thư mục publish là thư mục gốc và thêm một số response headers cơ bản. Backend dữ liệu và media chạy trên Supabase, không phải trên ổ đĩa tạm của Netlify.
 
-## F. Kiểm tra quyền bảo mật trước khi chia sẻ cho cả lớp
+## G. Kiểm tra quyền bảo mật trước khi chia sẻ cho cả lớp
 
 1. Đăng nhập bằng tài khoản A, tải ảnh lên và xác nhận chủ ảnh thấy nút sửa/xóa.
 2. Đăng nhập bằng tài khoản B trong cửa sổ trình duyệt riêng. B có thể xem ảnh và thả reaction, nhưng không được sửa/xóa bài của A.
-3. Kiểm tra trong `supabase/schema.sql` rằng RLS đang bật cho cả ba bảng và hai Storage bucket đều là **private**.
+3. Kiểm tra trong `supabase/schema.sql` rằng RLS đang bật cho các bảng hồ sơ, bài đăng, reaction, bình luận và hai Storage bucket đều là **private**.
 4. Nếu website đang công khai cho thành viên lớp, hãy chia sẻ URL website, không chia sẻ khóa OAuth bí mật hoặc mật khẩu database.
 
 ## Giới hạn mặc định trong bản này
@@ -113,10 +136,12 @@ noi-luu-giu-thanh-xuan-a5/
 ├── app.js                 # logic frontend / Supabase client
 ├── config.js              # điền project URL + public key của riêng cậu
 ├── config.example.js      # cấu hình mẫu
+├── UPDATE-v2-HUONG-DAN.md # hướng dẫn nâng cấp từ bản cũ
 ├── netlify.toml           # cấu hình deploy tĩnh
 ├── _redirects             # fallback cho route tĩnh
 └── supabase/
-    └── schema.sql         # backend database, RLS, storage policies
+    ├── schema.sql         # schema đầy đủ cho project mới
+    └── upgrade-v2.sql     # migration cho project A5 đang hoạt động
 ```
 
 ### Tài liệu backend
