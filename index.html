@@ -115,6 +115,17 @@
         <section class="page-view" id="page-people">
           <div class="page-title-row people-title"><div><span class="section-overline">OUR LITTLE CLASS</span><h1>Phòng học A5 <span class="title-doodle">♡</span></h1><p>Chọn chỗ ngồi của cậu, ghé thăm bạn bè và cùng nhau viết tiếp câu chuyện lớp mình.</p></div><div class="member-counter"><strong id="peopleCount">0</strong><span>mảnh ghép<br/>của A5</span></div></div>
           <div class="people-mode-switch" role="tablist" aria-label="Chế độ xem thành viên"><button type="button" class="people-mode-button active" data-action="switch-people-mode" data-mode="classroom" role="tab" aria-selected="true">🏫 Phòng học A5</button><button type="button" class="people-mode-button" data-action="switch-people-mode" data-mode="directory" role="tab" aria-selected="false">👥 Danh sách bạn bè</button></div>
+          <section class="officers-panel" id="officersPanel" aria-labelledby="officersPanelTitle">
+            <div class="officers-panel-heading"><div><span class="section-overline">OUR A5 CLASS TEAM</span><h2 id="officersPanelTitle">Ban cán sự lớp mình 🌷</h2><p>Những người cùng góp sức để A5 luôn vui và gắn kết.</p></div><span class="officers-heart" aria-hidden="true">♡</span></div>
+            <div id="officersSetupNotice" class="officers-setup-notice hidden"><strong>🌱 Chức năng đang chờ bật</strong><p>Người quản lý cần chạy tệp SQL <code>supabase/enable-a5-officers.sql</code> trong Supabase. Việc này chỉ tạo bảng riêng cho ban cán sự, không sửa hay xóa dữ liệu kỷ niệm.</p></div>
+            <div id="officersRoster" class="officers-roster"><div class="officers-loading">Đang chuẩn bị bảng phân công… ♡</div></div>
+            <div id="officerAdminPanel" class="officer-admin-panel hidden">
+              <div class="officer-admin-heading"><span>🔐</span><div><h3>Khu vực quản lý phân công</h3><p>Chỉ tài khoản quản trị website đã được xác nhận mới có quyền lưu thay đổi.</p></div></div>
+              <div id="officerAssignmentGrid" class="officer-assignment-grid"></div>
+              <div class="officer-admin-footer"><p>Mỗi bạn giữ tối đa một chức vụ. Chọn “Chưa phân công” để bỏ trống một vị trí.</p><button type="button" class="primary-button" data-action="save-officer-assignments">Lưu phân công ♡</button></div>
+              <p class="officer-admin-note">Chức vụ ban cán sự không cấp quyền quản trị website.</p>
+            </div>
+          </section>
           <section id="classroomPanel" class="classroom-panel" aria-label="Sơ đồ phòng học A5">
             <div class="classroom-board-wrap"><div class="classroom-board"><span class="classroom-board-flower">✿</span><div><small>CHÚNG MÌNH CÙNG HỌC, CÙNG LỚN LÊN</small><strong>LỚP A5</strong><em>Thanh xuân ngồi chung một lớp ♡</em></div><span class="classroom-board-spark">✦</span></div><div class="classroom-teacher-desk"><span class="teacher-bouquet">🌷</span><div><small>CÔ GIÁO CHỦ NHIỆM</small><strong>Lê Thị Hồng Nhạn</strong><span>Cô và 45 thành viên A5 ♡</span></div><span class="teacher-heart">♡</span></div></div>
             <div class="classroom-status-row"><div><span class="section-overline">CHỖ NGỒI CỦA CHÚNG MÌNH</span><h2>Mỗi người một chiếc bàn thân quen 🪑</h2><p>Hai khu A và B · mỗi khu 7 bàn dài · mỗi bàn có 4 chỗ ngồi cùng một hàng.</p></div><div class="classroom-seat-counter"><strong id="classroomSeatCount">0/56</strong><small>chỗ đã có người</small></div></div>

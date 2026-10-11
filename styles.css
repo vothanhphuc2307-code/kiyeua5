@@ -566,3 +566,48 @@ button.public-profile-photo:focus-visible,.media-visual-open:focus-visible,.on-t
 .public-profile-photo>.media-video-placeholder{position:absolute}
 @media(max-width:680px){.classroom-desk-grid,.seat-picker-aisle .classroom-desk-grid,.seat-picker-desk-grid{grid-template-columns:minmax(0,1fr)}.classroom-desk{padding:7px 9px 8px}.classroom-seat-row .classroom-seat{min-height:59px}.classroom-seat-row .classroom-seat-avatar{width:25px;height:25px}.classroom-seat-row .classroom-seat-name{font-size:8px}.classroom-seat-row .classroom-seat small{font-size:7px}}
 @media(max-width:370px){.new-member-welcome-card{padding:22px 14px}.new-member-welcome-stamp{font-size:7px;letter-spacing:1.1px}.classroom-seat-row{gap:2px}.classroom-seat-row .classroom-seat{min-height:54px}.classroom-seat-row .classroom-seat-avatar{width:22px;height:22px}.classroom-seat-row .classroom-seat-name{font-size:7px}}
+
+
+/* A5 class officer roles — isolated styles; no changes to existing layouts */
+.officers-panel{display:grid;gap:14px;margin:0 0 22px;padding:18px;border:1px solid #f1dfe5;border-radius:20px;background:linear-gradient(135deg,#fffafc 0%,#fffdf8 58%,#f8fbf6 100%);box-shadow:0 8px 26px #9d68720b;animation:classroomAppear .35s ease both}
+.officers-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.officers-panel-heading h2{margin:3px 0 0;font-size:21px;letter-spacing:-.4px;color:#75495d}
+.officers-panel-heading p{margin:6px 0 0;color:#a58b99;font-size:11px;line-height:1.6}
+.officers-heart{display:grid;place-items:center;width:43px;height:43px;flex:0 0 auto;border:1px solid #f3dbe2;border-radius:15px;background:#fff0f4;color:#cb829b;font-size:25px;transform:rotate(7deg)}
+.officers-roster{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.officer-roster-card{min-width:0;display:flex;align-items:center;gap:10px;padding:12px;border:1px solid #f3e6e9;border-radius:15px;background:#fff;transition:transform .2s ease,box-shadow .2s ease}
+.officer-roster-card:hover{transform:translateY(-2px);box-shadow:0 7px 18px #8a57600e}
+.officer-role-icon{display:grid;place-items:center;width:36px;height:36px;flex:0 0 auto;border-radius:12px;background:#fff1f4;font-size:18px}
+.officer-roster-copy{display:flex;flex:1;min-width:0;flex-direction:column;gap:3px}
+.officer-roster-copy small{font-size:9px;color:#bd8498;font-weight:800;letter-spacing:.35px}
+.officer-roster-copy strong{font-size:12px;color:#674857;overflow-wrap:anywhere}
+.officer-roster-copy p{margin:0;color:#b19ba5;font-size:9px;line-height:1.45}
+.officer-roster-avatar{width:37px;height:37px;flex:0 0 auto;border-radius:13px;overflow:hidden;display:grid;place-items:center;background:#f8e8ed;color:#a96981;font-weight:900;font-size:14px}
+.officer-roster-avatar img{width:100%;height:100%;object-fit:cover}
+.officer-roster-avatar.is-empty{border:1px dashed #e9cbd5;background:#fffafc;color:#d3a3b3}
+.officer-badge{display:inline-flex;align-items:center;gap:4px;width:max-content;max-width:100%;margin:3px 0 2px;padding:4px 7px;border:1px solid #f0d5df;border-radius:999px;background:#fff1f5;color:#a85c79;font-size:8px;font-weight:900;line-height:1.2;overflow-wrap:anywhere}
+.officer-badge-compact{font-size:7px;padding:3px 5px}
+.officers-setup-notice{padding:13px 15px;border:1px dashed #ead3da;border-radius:13px;background:#fff8fa;color:#9c6e80;font-size:11px;line-height:1.7}
+.officers-setup-notice strong{display:block;margin-bottom:3px;color:#86576a}
+.officers-setup-notice p{margin:0}
+.officers-setup-notice code{padding:2px 5px;border-radius:5px;background:#f5e8ec;font-size:10px}
+.officers-loading{padding:13px;color:#b195a2;font-size:11px;text-align:center}
+.officer-admin-panel{padding:15px;border:1px solid #e6d8ef;border-radius:17px;background:linear-gradient(135deg,#fcf8ff,#fffafd)}
+.officer-admin-heading{display:flex;align-items:flex-start;gap:9px;margin-bottom:11px}
+.officer-admin-heading>span{display:grid;place-items:center;width:34px;height:34px;flex:0 0 auto;border-radius:11px;background:#f0e4fa;font-size:17px}
+.officer-admin-heading h3{margin:0;color:#705080;font-size:13px}
+.officer-admin-heading p{margin:4px 0 0;color:#a28caf;font-size:10px;line-height:1.6}
+.officer-assignment-grid{display:grid;gap:7px}
+.officer-assignment-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,.85fr);align-items:center;gap:12px;padding:9px 10px;border:1px solid #eee5f1;border-radius:11px;background:#fff}
+.officer-assignment-row>span{display:grid;gap:3px;min-width:0}
+.officer-assignment-row b{font-size:10px;color:#795a85}
+.officer-assignment-row small{font-size:9px;color:#ae9ab5;line-height:1.4}
+.officer-role-select{width:100%;min-width:0;padding:9px 10px;border:1px solid #eadce9;border-radius:9px;background:#fffdfd;color:#765a7e;font:inherit;font-size:10px;outline:none}
+.officer-role-select:focus{border-color:#c79bcf;box-shadow:0 0 0 3px #ead8f244}
+.officer-admin-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}
+.officer-admin-footer p,.officer-admin-note{margin:0;color:#aa98b0;font-size:9px;line-height:1.6}
+.officer-admin-footer .primary-button{flex:0 0 auto;white-space:nowrap}
+.officer-admin-note{margin-top:8px;color:#b49eae}
+.officer-admin-panel button:disabled{opacity:.65;cursor:wait}
+@media(max-width:760px){.officers-panel{padding:13px;border-radius:16px;gap:11px}.officers-panel-heading h2{font-size:17px}.officers-panel-heading p{font-size:9px}.officers-heart{width:36px;height:36px;border-radius:12px;font-size:21px}.officers-roster{grid-template-columns:1fr;gap:7px}.officer-roster-card{padding:10px;border-radius:12px}.officer-role-icon{width:32px;height:32px;border-radius:10px;font-size:16px}.officer-roster-copy small{font-size:8px}.officer-roster-copy strong{font-size:11px}.officer-roster-copy p{font-size:8px}.officer-roster-avatar{width:33px;height:33px;border-radius:11px}.officer-admin-panel{padding:11px}.officer-assignment-row{grid-template-columns:1fr;gap:7px}.officer-role-select{font-size:11px}.officer-admin-footer{align-items:stretch;flex-direction:column}.officer-admin-footer .primary-button{width:100%}.officer-badge{font-size:7px}}
+@media(prefers-reduced-motion:reduce){.officer-roster-card,.officers-panel{animation:none!important;transition:none!important}}

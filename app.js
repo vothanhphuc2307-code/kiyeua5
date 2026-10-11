@@ -74,6 +74,9 @@
   let peopleMode = 'classroom';
   let seatPromptShownForUserId = null;
   let seatSaving = false;
+  let classOfficerAssignments = [];
+  let officersFeatureAvailable = false;
+  let isA5SiteAdmin = false;
 
   function escapeHTML(value) {
     return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -362,7 +365,7 @@
         // Defer application calls so the auth callback cannot hold the auth lock.
         window.setTimeout(() => {
           if (event === 'SIGNED_OUT') {
-            currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; classroomSeats = []; classroomFeatureAvailable = false; seatPromptShownForUserId = null; lastUserId = null;
+            currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; classroomSeats = []; classroomFeatureAvailable = false; classOfficerAssignments = []; officersFeatureAvailable = false; isA5SiteAdmin = false; seatPromptShownForUserId = null; lastUserId = null;
             yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookOpened = false; yearbookSpreadIndex = 0;
             showAuthScreen();
           } else if (session?.user) {
@@ -424,7 +427,7 @@
     const { error } = await supabase.auth.signOut();
     if (button) button.disabled = false;
     if (error) { console.error(error); toast('Chưa đăng xuất được. Thử lại nhé.', 'error'); return; }
-    currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; classroomSeats = []; classroomFeatureAvailable = false; seatPromptShownForUserId = null; lastUserId = null;
+    currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; classroomSeats = []; classroomFeatureAvailable = false; classOfficerAssignments = []; officersFeatureAvailable = false; isA5SiteAdmin = false; seatPromptShownForUserId = null; lastUserId = null;
     yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookOpened = false; yearbookSpreadIndex = 0;
     signedUrlCache.clear(); showAuthScreen(); toast('Hẹn gặp cậu ở cuốn lưu bút nhé ♡', 'success');
   }
@@ -552,6 +555,7 @@
       });
       if (token !== pageLoadToken) return;
       await loadClassroomSeats();
+      await loadClassOfficerAssignments();
       await loadReactions();
       await loadCommentCounts();
       await loadNotifications();
@@ -807,7 +811,7 @@
       const bio = profile.bio || 'đang viết tiếp câu chuyện thanh xuân...';
       const dream = profile.dream_job ? `<p class="person-dream-teaser">✨ Mơ ước: ${escapeHTML(profile.dream_job)}</p>` : '';
       const seat = classroomSeats.find(entry => entry.user_id === profile.id);
-      return `<article class="person-card" data-action="view-profile" data-user-id="${escapeAttr(profile.id)}" tabindex="0" role="button" style="--person-tint:${tint[index % tint.length]};animation-delay:${Math.min(index * 30, 240)}ms"><div class="person-avatar">${profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện ${escapeAttr(displayName(profile))}" loading="lazy"/>` : shortInitial(displayName(profile))}</div><h3>${escapeHTML(displayName(profile))}</h3><p class="person-nickname">${escapeHTML(profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5')}</p><p class="person-bio">${escapeHTML(bio)}</p>${dream}${seat ? `<span class="person-seat-tag">🪑 Khu ${escapeHTML(seat.row_code)} · Bàn ${String(seat.desk_number).padStart(2, '0')} · Chỗ ${seat.seat_number}</span>` : ''}<div class="person-statline"><span>▧ <b>${ownMedia.filter(item => item.media_type === 'photo').length}</b> ảnh</span><span>▷ <b>${ownMedia.filter(item => item.media_type === 'video').length}</b> video</span></div><span class="person-view-button">Ghé thăm góc nhỏ ↗</span></article>`;
+      return `<article class="person-card" data-action="view-profile" data-user-id="${escapeAttr(profile.id)}" tabindex="0" role="button" style="--person-tint:${tint[index % tint.length]};animation-delay:${Math.min(index * 30, 240)}ms"><div class="person-avatar">${profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện ${escapeAttr(displayName(profile))}" loading="lazy"/>` : shortInitial(displayName(profile))}</div><h3>${escapeHTML(displayName(profile))}</h3>${officerBadgeHTML(profile.id)}<p class="person-nickname">${escapeHTML(profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5')}</p><p class="person-bio">${escapeHTML(bio)}</p>${dream}${seat ? `<span class="person-seat-tag">🪑 Khu ${escapeHTML(seat.row_code)} · Bàn ${String(seat.desk_number).padStart(2, '0')} · Chỗ ${seat.seat_number}</span>` : ''}<div class="person-statline"><span>▧ <b>${ownMedia.filter(item => item.media_type === 'photo').length}</b> ảnh</span><span>▷ <b>${ownMedia.filter(item => item.media_type === 'video').length}</b> video</span></div><span class="person-view-button">Ghé thăm góc nhỏ ↗</span></article>`;
     }).join('');
     $('#peopleEmpty').classList.toggle('hidden', people.length !== 0);
     $('#peopleGrid').classList.toggle('hidden', people.length === 0);
@@ -819,6 +823,122 @@
       button.setAttribute('aria-selected', String(active));
     });
     renderClassroom();
+    renderOfficerPanel();
+  }
+
+  const A5_OFFICER_ROLES = [
+    { key: 'class_leader', label: 'Lớp trưởng', shortLabel: 'LỚP TRƯỞNG', icon: '👑', note: 'Đại diện và kết nối tập thể lớp' },
+    { key: 'academic_vice', label: 'Lớp phó học tập', shortLabel: 'LP HỌC TẬP', icon: '📚', note: 'Đồng hành cùng việc học của lớp' },
+    { key: 'labor_vice', label: 'Lớp phó lao động', shortLabel: 'LP LAO ĐỘNG', icon: '🌱', note: 'Phối hợp hoạt động và nề nếp' },
+    { key: 'group_leader_1', label: 'Tổ trưởng tổ 1', shortLabel: 'TỔ TRƯỞNG 1', icon: '✿', note: 'Phụ trách kết nối tổ 1' },
+    { key: 'group_leader_2', label: 'Tổ trưởng tổ 2', shortLabel: 'TỔ TRƯỞNG 2', icon: '✿', note: 'Phụ trách kết nối tổ 2' },
+    { key: 'group_leader_3', label: 'Tổ trưởng tổ 3', shortLabel: 'TỔ TRƯỞNG 3', icon: '✿', note: 'Phụ trách kết nối tổ 3' },
+    { key: 'group_leader_4', label: 'Tổ trưởng tổ 4', shortLabel: 'TỔ TRƯỞNG 4', icon: '✿', note: 'Phụ trách kết nối tổ 4' }
+  ];
+
+  function officerRoleForUser(userId) {
+    if (!userId) return null;
+    const assignment = classOfficerAssignments.find(item => item.user_id === userId);
+    return assignment ? A5_OFFICER_ROLES.find(role => role.key === assignment.role_key) || null : null;
+  }
+
+  function officerBadgeHTML(userId, compact = false) {
+    const role = officerRoleForUser(userId);
+    if (!role) return '';
+    return `<span class="officer-badge${compact ? ' officer-badge-compact' : ''}" title="${escapeAttr(role.label)}">${role.icon} ${escapeHTML(compact ? role.shortLabel : role.label)}</span>`;
+  }
+
+  async function loadClassOfficerAssignments() {
+    officersFeatureAvailable = false;
+    classOfficerAssignments = [];
+    isA5SiteAdmin = false;
+    if (!supabase || !currentUser) return;
+    try {
+      const [rowsResult, adminResult] = await Promise.all([
+        supabase.from('a5_class_officers').select('role_key,user_id,assigned_at'),
+        supabase.rpc('a5_is_site_admin')
+      ]);
+      if (rowsResult.error) throw rowsResult.error;
+      if (adminResult.error) throw adminResult.error;
+      classOfficerAssignments = rowsResult.data || [];
+      isA5SiteAdmin = adminResult.data === true;
+      officersFeatureAvailable = true;
+    } catch (error) {
+      // Until the separate SQL migration and owner bootstrap are completed, the rest of A5 remains usable.
+      classOfficerAssignments = [];
+      isA5SiteAdmin = false;
+      officersFeatureAvailable = false;
+      console.info('A5 officers feature is not enabled yet:', error?.message || error);
+    }
+    renderOfficerPanel();
+  }
+
+  function renderOfficerPanel() {
+    const roster = $('#officersRoster');
+    const notice = $('#officersSetupNotice');
+    const adminPanel = $('#officerAdminPanel');
+    if (!roster || !notice || !adminPanel) return;
+
+    if (!officersFeatureAvailable) {
+      notice.classList.remove('hidden');
+      roster.innerHTML = '<div class="officers-loading">Bảng ban cán sự sẽ xuất hiện sau khi quản trị viên bật tính năng ♡</div>';
+      adminPanel.classList.add('hidden');
+      return;
+    }
+
+    notice.classList.add('hidden');
+    roster.innerHTML = A5_OFFICER_ROLES.map(role => {
+      const assignment = classOfficerAssignments.find(item => item.role_key === role.key);
+      const profile = assignment?.user_id ? profiles.find(person => person.id === assignment.user_id) : null;
+      const memberName = profile ? displayName(profile) : 'Chưa phân công';
+      const avatar = profile?.avatar_url
+        ? `<img src="${escapeAttr(profile.avatar_url)}" alt="" loading="lazy"/>`
+        : `<span>${profile ? shortInitial(memberName) : '♡'}</span>`;
+      return `<article class="officer-roster-card"><span class="officer-role-icon" aria-hidden="true">${role.icon}</span><div class="officer-roster-copy"><small>${escapeHTML(role.label)}</small><strong>${escapeHTML(memberName)}</strong><p>${escapeHTML(role.note)}</p></div><div class="officer-roster-avatar${profile ? '' : ' is-empty'}">${avatar}</div></article>`;
+    }).join('');
+
+    adminPanel.classList.toggle('hidden', !isA5SiteAdmin);
+    if (!isA5SiteAdmin) return;
+    const assignmentGrid = $('#officerAssignmentGrid');
+    if (!assignmentGrid) return;
+    assignmentGrid.innerHTML = A5_OFFICER_ROLES.map(role => {
+      const currentId = classOfficerAssignments.find(item => item.role_key === role.key)?.user_id || '';
+      const options = profiles.map(profile => {
+        const assignedElsewhere = classOfficerAssignments.some(item => item.role_key !== role.key && item.user_id === profile.id);
+        const disabled = assignedElsewhere && profile.id !== currentId ? ' disabled' : '';
+        const selected = currentId === profile.id ? ' selected' : '';
+        return `<option value="${escapeAttr(profile.id)}"${selected}${disabled}>${escapeHTML(displayName(profile))}</option>`;
+      }).join('');
+      return `<label class="officer-assignment-row"><span><b>${role.icon} ${escapeHTML(role.label)}</b><small>${escapeHTML(role.note)}</small></span><select class="officer-role-select" data-officer-role-select="${escapeAttr(role.key)}" aria-label="Chọn ${escapeAttr(role.label)}"><option value="">— Chưa phân công —</option>${options}</select></label>`;
+    }).join('');
+  }
+
+  async function saveOfficerAssignments(button) {
+    if (!supabase || !currentUser) return toast('Cậu hãy đăng nhập trước nhé.', 'info');
+    if (!isA5SiteAdmin) return toast('Tài khoản này không có quyền phân công ban cán sự.', 'error');
+    const selects = $$('[data-officer-role-select]');
+    if (selects.length !== A5_OFFICER_ROLES.length) return toast('Chưa tải đủ các vị trí. Hãy tải lại trang rồi thử lại.', 'error');
+    const assignments = selects.map(select => ({ role_key: select.dataset.officerRoleSelect, user_id: select.value || null }));
+    const selectedUsers = assignments.map(item => item.user_id).filter(Boolean);
+    if (new Set(selectedUsers).size !== selectedUsers.length) {
+      return toast('Mỗi bạn chỉ nên được phân công một chức vụ. Hãy kiểm tra lựa chọn bị trùng nha.', 'error', 5000);
+    }
+    if (button) { button.disabled = true; button.dataset.originalText = button.textContent; button.textContent = 'Đang lưu…'; }
+    try {
+      const { error } = await supabase.rpc('a5_save_class_officers', { p_assignments: assignments });
+      if (error) throw error;
+      await loadClassOfficerAssignments();
+      renderPeople();
+      toast('Đã lưu ban cán sự A5 thành công ♡', 'success');
+    } catch (error) {
+      console.error('Could not save class officers:', error);
+      const message = error?.code === '42501'
+        ? 'Tài khoản chưa được cấp quyền quản trị trong Supabase.'
+        : `Chưa lưu được: ${String(error?.message || 'lỗi kết nối').slice(0, 110)}`;
+      toast(message, 'error', 6000);
+    } finally {
+      if (button) { button.disabled = false; button.textContent = button.dataset.originalText || 'Lưu phân công ♡'; delete button.dataset.originalText; }
+    }
   }
 
   async function loadClassroomSeats() {
@@ -2233,6 +2353,7 @@
       else if (action === 'select-music-track') playMusicTrack(actionButton.dataset.musicTrack);
       else if (action === 'welcome-upload' || action === 'welcome-classroom' || action === 'welcome-yearbook' || action === 'welcome-dismiss') handleNewMemberWelcome(action);
       else if (action === 'switch-people-mode') switchPeopleMode(actionButton.dataset.mode);
+      else if (action === 'save-officer-assignments') await saveOfficerAssignments(actionButton);
       else if (action === 'open-seat-picker') openSeatSelection();
       else if (action === 'dismiss-seat-selection') { seatPromptShownForUserId = currentUser?.id || seatPromptShownForUserId; closeModals(); }
       else if (action === 'choose-seat') await chooseClassroomSeat(actionButton.dataset.seatCode);
