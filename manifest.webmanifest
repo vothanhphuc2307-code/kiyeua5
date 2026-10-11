@@ -1,0 +1,43 @@
+{
+  "id": "/",
+  "name": "NHỮNG BÉ BÁO 12A5 · Nơi lưu giữ thanh xuân",
+  "short_name": "Bé Báo 12A5",
+  "description": "Góc lưu bút, album và kỷ niệm của lớp 12A5.",
+  "lang": "vi-VN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "any",
+  "background_color": "#fffaf8",
+  "theme_color": "#fff3f6",
+  "categories": [
+    "education",
+    "social",
+    "lifestyle"
+  ],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
