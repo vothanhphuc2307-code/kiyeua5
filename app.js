@@ -17,6 +17,7 @@
   const VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v'];
   const PHOTO_MAX = 15 * 1024 * 1024;
   const VIDEO_MAX = 50 * 1024 * 1024;
+  const TUS_UPLOAD_THRESHOLD = 6 * 1024 * 1024;
   const AVATAR_MAX = 5 * 1024 * 1024;
   const MEDIA_BUCKET = 'memory-media';
   const AVATAR_BUCKET = 'profile-avatars';
@@ -2433,6 +2434,163 @@
     } finally { button.disabled = false; button.innerHTML = originalHtml; }
   }
 
+  // TUS is loaded only when a file exceeds Supabase's recommended 6 MB threshold,
+  // so normal page startup does not pay the cost of another JavaScript library.
+  let a5TusClientPromise = null;
+  async function a5EnsureTusClient() {
+    if (window.tus?.Upload) return true;
+    if (a5TusClientPromise) return a5TusClientPromise;
+    a5TusClientPromise = new Promise((resolve) => {
+      const src = 'https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js';
+      let script = [...document.scripts].find((node) => node.src === src);
+      const finish = (ok) => resolve(Boolean(ok && window.tus?.Upload));
+      if (script) {
+        script.addEventListener('load', () => finish(true), { once: true });
+        script.addEventListener('error', () => finish(false), { once: true });
+        // If an existing script already finished loading but did not expose tus,
+        // do not wait forever for another load event.
+        window.setTimeout(() => finish(Boolean(window.tus?.Upload)), 2500);
+        return;
+      }
+      script = document.createElement('script');
+      script.src = src;
+      script.async = true;
+      script.onload = () => finish(true);
+      script.onerror = () => finish(false);
+      document.head.appendChild(script);
+    }).finally(() => {
+      if (!window.tus?.Upload) a5TusClientPromise = null;
+    });
+    return a5TusClientPromise;
+  }
+
+  function a5TusResumeKey(file) {
+    // Keep the resume-path mapping compact; file names never enter URLs or SQL.
+    const raw = `${currentUser?.id || ''}|${file.name}|${file.size}|${file.lastModified || 0}`;
+    let hash = 2166136261;
+    for (let i = 0; i < raw.length; i++) {
+      hash ^= raw.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return `a5_tus_path_v1:${currentUser?.id || 'unknown'}:${(hash >>> 0).toString(36)}`;
+  }
+
+  function a5GetOrCreateTusPath(file, resumeKey) {
+    const expectedPrefix = `${currentUser.id}/`;
+    try {
+      const existing = localStorage.getItem(resumeKey);
+      if (existing && existing.startsWith(expectedPrefix) && !existing.includes('..')) return existing;
+    } catch (error) {
+      console.warn('A5 cannot read TUS resume path from local storage:', error);
+    }
+    const path = `${currentUser.id}/${Date.now()}-${uniqueId()}-${safeFileName(file.name)}`;
+    try { localStorage.setItem(resumeKey, path); }
+    catch (error) { console.warn('A5 cannot save TUS resume path:', error); }
+    return path;
+  }
+
+  function a5ClearTusResumePath(resumeKey) {
+    if (!resumeKey) return;
+    try { localStorage.removeItem(resumeKey); }
+    catch (error) { console.warn('A5 cannot clear TUS resume path:', error); }
+  }
+
+  function a5TusEndpoint() {
+    const config = window.A5_CONFIG || {};
+    let projectUrl;
+    try { projectUrl = new URL(String(config.SUPABASE_URL || '')); }
+    catch (_) { throw new Error('URL Supabase chưa hợp lệ trong config.js.'); }
+    // Supabase recommends the direct Storage hostname for large uploads.
+    // Keep custom/self-hosted project URLs on their configured origin.
+    const match = projectUrl.hostname.match(/^([a-z0-9-]+)\.supabase\.co$/i);
+    const storageOrigin = match
+      ? `${projectUrl.protocol}//${match[1]}.storage.supabase.co`
+      : projectUrl.origin;
+    return `${storageOrigin.replace(/\/+$/, '')}/storage/v1/upload/resumable`;
+  }
+
+  async function a5UploadWithTus(file, path, onProgress) {
+    const config = window.A5_CONFIG || {};
+    const { data, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    const accessToken = data?.session?.access_token;
+    if (!accessToken) throw new Error('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại rồi thử tải video nhé.');
+
+    const endpoint = a5TusEndpoint();
+    const objectFingerprint = `a5-tus-v1|${currentUser.id}|${MEDIA_BUCKET}|${path}|${file.name}|${file.size}|${file.lastModified || 0}`;
+    await new Promise((resolve, reject) => {
+      let finished = false;
+      const succeed = () => { if (!finished) { finished = true; resolve(); } };
+      const fail = (uploadError) => { if (!finished) { finished = true; reject(uploadError || new Error('Tải file chưa hoàn tất.')); } };
+      let upload;
+      try {
+        upload = new window.tus.Upload(file, {
+          endpoint,
+          retryDelays: [0, 3000, 5000, 10000, 20000],
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            apikey: String(config.SUPABASE_ANON_KEY || ''),
+            'x-upsert': 'false'
+          },
+          uploadDataDuringCreation: true,
+          removeFingerprintOnSuccess: true,
+          chunkSize: 6 * 1024 * 1024,
+          fingerprint: () => Promise.resolve(objectFingerprint),
+          metadata: {
+            bucketName: MEDIA_BUCKET,
+            objectName: path,
+            contentType: file.type || 'application/octet-stream',
+            cacheControl: '3600'
+          },
+          onProgress: (bytesUploaded, bytesTotal) => {
+            try { onProgress?.(bytesUploaded, bytesTotal); }
+            catch (progressError) { console.warn('A5 upload progress UI update failed:', progressError); }
+          },
+          onError: fail,
+          onSuccess: succeed
+        });
+      } catch (constructorError) {
+        fail(constructorError);
+        return;
+      }
+      upload.findPreviousUploads().then((previousUploads) => {
+        if (finished) return;
+        if (previousUploads?.length) {
+          // Prefer the latest resumable session; old upload URLs expire after 24 hours.
+          const freshUploads = previousUploads.filter((entry) => {
+            const created = Date.parse(entry.creationTime || '');
+            return Number.isFinite(created) && Date.now() - created < 23 * 60 * 60 * 1000;
+          }).sort((a, b) => Date.parse(b.creationTime || 0) - Date.parse(a.creationTime || 0));
+          if (freshUploads.length) upload.resumeFromPreviousUpload(freshUploads[0]);
+        }
+        upload.start();
+      }).catch(fail);
+    });
+  }
+
+  async function a5UploadMediaObject(file, path, onProgress, resumeKey) {
+    let storagePath = path;
+    if (file.size > TUS_UPLOAD_THRESHOLD) {
+      const tusReady = await a5EnsureTusClient();
+      if (tusReady) {
+        await a5UploadWithTus(file, storagePath, onProgress);
+        return storagePath;
+      }
+      // Keep uploads usable if the optional CDN is blocked or temporarily unavailable.
+      // Use a fresh path so a partial TUS session can't collide with a standard upload.
+      console.warn('TUS library did not load; falling back to the standard Supabase upload.');
+      a5ClearTusResumePath(resumeKey);
+      storagePath = `${currentUser.id}/${Date.now()}-${uniqueId()}-${safeFileName(file.name)}`;
+      toast('Chưa tải được thư viện upload tiếp tục; đang dùng cách tải thông thường nhé.', 'info', 4500);
+    }
+    const { error } = await supabase.storage.from(MEDIA_BUCKET).upload(storagePath, file, {
+      cacheControl: '3600', upsert: false, contentType: file.type
+    });
+    if (error) throw error;
+    onProgress?.(file.size, file.size);
+    return storagePath;
+  }
+
   async function uploadSelectedFiles(event) {
     event.preventDefault();
     if (isUploading) return;
@@ -2455,24 +2613,36 @@
     let complete = 0;
     try {
       for (const file of files) {
-        progressText.textContent = `Đang tải ${file.name}... (${complete + 1}/${files.length})`;
+        const usesTus = file.size > TUS_UPLOAD_THRESHOLD;
+        const resumeKey = usesTus ? a5TusResumeKey(file) : null;
+        const path = usesTus
+          ? a5GetOrCreateTusPath(file, resumeKey)
+          : `${currentUser.id}/${Date.now()}-${uniqueId()}-${safeFileName(file.name)}`;
+        const updateProgress = (bytesUploaded, bytesTotal) => {
+          const currentRatio = bytesTotal > 0 ? Math.min(1, bytesUploaded / bytesTotal) : 0;
+          const overall = Math.min(100, Math.round(((complete + currentRatio) / files.length) * 100));
+          bar.style.width = `${Math.max(8, overall)}%`;
+          const currentPercent = Math.round(currentRatio * 100);
+          progressText.textContent = `${usesTus ? 'Đang tải tiếp tục' : 'Đang tải'} ${file.name}… ${currentPercent}% (${complete + 1}/${files.length})`;
+        };
+        progressText.textContent = `${usesTus ? 'Đang chuẩn bị upload theo phần' : 'Đang tải'} ${file.name}... (${complete + 1}/${files.length})`;
         bar.style.width = `${Math.max(8, Math.round((complete / files.length) * 100))}%`;
-        const path = `${currentUser.id}/${Date.now()}-${uniqueId()}-${safeFileName(file.name)}`;
-        const { error: storageError } = await supabase.storage.from(MEDIA_BUCKET).upload(path, file, {
-          cacheControl: '3600', upsert: false, contentType: file.type
-        });
-        if (storageError) throw storageError;
-        savedPaths.push(path);
+        const storagePath = await a5UploadMediaObject(file, path, updateProgress, resumeKey);
+        savedPaths.push(storagePath);
         const { error: insertError } = await supabase.from('media_items').insert({
-          user_id: currentUser.id, media_type: currentUploadType, storage_path: path,
+          user_id: currentUser.id, media_type: currentUploadType, storage_path: storagePath,
           caption, note_color: noteColor, note_font: noteFont, album_name: albumName || null
         });
         if (insertError) {
-          await supabase.storage.from(MEDIA_BUCKET).remove([path]);
-          savedPaths.pop();
+          // Remove any newly uploaded object and clear the resume key so the next
+          // attempt cannot accidentally resume a completed upload with no DB row.
+          try { await supabase.storage.from(MEDIA_BUCKET).remove([storagePath]); }
+          finally { a5ClearTusResumePath(resumeKey); savedPaths.pop(); }
           throw insertError;
         }
+        a5ClearTusResumePath(resumeKey);
         complete++;
+        bar.style.width = `${Math.round((complete / files.length) * 100)}%`;
       }
       bar.style.width = '100%'; progressText.textContent = 'Đã cất vào cuốn lưu bút ♡';
       closeModals();
