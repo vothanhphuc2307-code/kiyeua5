@@ -859,15 +859,11 @@ img, video { max-width: 100%; }
 }
 
 
-/* A5 LIVE UPDATES v1.2 — preserve existing cards during Realtime reconciliation. */
-.memory-card.a5-card-stable { animation: none !important; }
-@keyframes a5LiveCardInsert {
-  from { opacity: 0; transform: translate3d(0, 7px, 0) scale(.997); }
-  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
-}
-.memory-card.a5-live-new-card {
-  animation: a5LiveCardInsert .24s ease-out both !important;
-}
+/* A5 LIVE UPDATES v1.3 — live posts must not restart card/page animations. */
+.memory-card.a5-card-stable,
+.memory-card.a5-live-new-card { animation: none !important; }
+/* Keep the user's view calm while live rows are inserted/reconciled. */
+.reaction-row .reaction-pill { transition: background-color .12s ease, border-color .12s ease; }
 @media (prefers-reduced-motion: reduce) {
-  .memory-card.a5-live-new-card { animation: none !important; }
+  .memory-card, .reaction-row .reaction-pill { animation: none !important; transition: none !important; }
 }

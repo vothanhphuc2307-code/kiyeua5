@@ -89,6 +89,8 @@
   let a5RealtimeSyncBusy = false;
   let a5RealtimeMediaSignature = '';
   let a5RealtimeProfileSignature = '';
+  let a5ReactionLoadSequence = 0;
+  const a5ReactionMutationLocks = new Set();
   let a5YearbookPendingLiveUpdate = false;
   let a5RealtimeLifecycleBound = false;
   let deferredA5InstallPrompt = null;
@@ -743,10 +745,10 @@
     }
     try {
       const [profileResult, mediaResult] = await Promise.all([
-        supabase.from('profiles').select('id,display_name,nickname,bio,dream_job,hobbies,future_wishes,avatar_path,profile_color,linked_providers,created_at,updated_at').order('created_at', { ascending: true }),
+        supabase.from('profiles').select('id,display_name,nickname,bio,dream_job,hobbies,future_wishes,avatar_path,profile_color,linked_providers,created_at,updated_at').order('created_at', { ascending: true }).order('id', { ascending: true }),
         // Owners are joined in memory from the profiles result below. Avoid embedding
         // the same profile fields into every media row; smaller response = faster startup.
-        supabase.from('media_items').select('id,user_id,media_type,storage_path,caption,note_color,note_font,album_name,created_at,updated_at').order('created_at', { ascending: false }).limit(200)
+        supabase.from('media_items').select('id,user_id,media_type,storage_path,caption,note_color,note_font,album_name,created_at,updated_at').order('created_at', { ascending: false }).order('id', { ascending: false }).limit(200)
       ]);
       if (profileResult.error) throw profileResult.error;
       if (mediaResult.error) throw mediaResult.error;
@@ -806,10 +808,12 @@
   }
 
   function a5LiveMediaSignature(rows) {
+    // Sort by stable primary key before comparing. Equal created_at timestamps can
+    // otherwise shuffle rows between snapshots and cause needless DOM work.
     return JSON.stringify((rows || []).map(row => [
       row.id, row.user_id, row.media_type, row.storage_path, row.caption,
       row.note_color, row.note_font, row.album_name, row.created_at, row.updated_at
-    ]));
+    ]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
   }
 
   function a5LiveProfileSignature(rows) {
@@ -817,7 +821,7 @@
       row.id, row.display_name, row.nickname, row.bio, row.dream_job,
       row.hobbies, row.future_wishes, row.avatar_path, row.profile_color,
       row.linked_providers, row.created_at, row.updated_at
-    ]));
+    ]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
   }
 
   function stopA5RealtimeSubscriptions() {
@@ -918,10 +922,10 @@
     const [profileResult, mediaResult] = await Promise.all([
       supabase.from('profiles')
         .select('id,display_name,nickname,bio,dream_job,hobbies,future_wishes,avatar_path,profile_color,linked_providers,created_at,updated_at')
-        .order('created_at', { ascending: true }),
+        .order('created_at', { ascending: true }).order('id', { ascending: true }),
       supabase.from('media_items')
         .select('id,user_id,media_type,storage_path,caption,note_color,note_font,album_name,created_at,updated_at')
-        .order('created_at', { ascending: false }).limit(200)
+        .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(200)
     ]);
     if (profileResult.error) throw profileResult.error;
     if (mediaResult.error) throw mediaResult.error;
@@ -1026,10 +1030,11 @@
       // derived tables on every upload; their own Realtime events keep them current.
       const reactionsChanged = kinds.has('reactions');
       const commentsChanged = kinds.has('comments');
+      let reactionStateApplied = !reactionsChanged;
 
       if (reactionsChanged) {
-        try { await loadReactions(); }
-        catch (error) { console.warn('A5 live reactions sync was skipped:', error?.message || error); }
+        try { reactionStateApplied = (await loadReactions()) !== false; }
+        catch (error) { reactionStateApplied = false; console.warn('A5 live reactions sync was skipped:', error?.message || error); }
       }
       if (commentsChanged) {
         try { await loadCommentCounts(); }
@@ -1049,16 +1054,23 @@
         // The changed row may be older than the visible 200-item feed but still in the yearbook.
         invalidateA5YearbookAfterLiveChange();
       }
-      const shouldRerenderMedia = mediaOrProfileChanged || reactionsChanged || commentsChanged;
-      if (shouldRerenderMedia) {
+      // Only media/profile mutations are allowed to reconcile the grid order.
+      // Reactions and comment counts are patched on existing nodes: replacing a
+      // whole reaction row on every event both flashes the UI and can drop a tap.
+      if (mediaOrProfileChanged) {
         const anchor = captureA5VisibleMediaAnchor();
         if (activeTab === 'home') renderHomeMedia();
         else if (activeTab === 'gallery') renderGallery();
         if ((snapshot.profilesChanged || snapshot.mediaChanged) && activeTab === 'people') renderPeople();
         if (snapshot.profilesChanged && activeTab === 'profile') renderProfile();
-        renderNotificationBadge();
         restoreA5VisibleMediaAnchor(anchor);
+      } else if ((reactionsChanged && reactionStateApplied) || commentsChanged) {
+        a5PatchVisibleMediaLiveDetails({
+          reactions: reactionsChanged && reactionStateApplied,
+          comments: commentsChanged
+        });
       }
+      if (kinds.has('notifications') || kinds.has('comments') || kinds.has('reactions')) renderNotificationBadge();
 
       if (kinds.has('comments') && activeCommentsMediaId && !$('#commentsModal')?.classList.contains('hidden') &&
           document.activeElement !== $('#commentInput') && !editingCommentId) {
@@ -1112,14 +1124,29 @@
 
   async function loadReactions() {
     if (!supabase || !currentUser) return;
+    const requestSequence = ++a5ReactionLoadSequence;
     const ids = mediaItems.map(item => item.id);
-    if (!ids.length) { reactionItems = []; return; }
+    const idSignature = ids.join('|');
+    if (!ids.length) { reactionItems = []; return true; }
     const { data, error } = await supabase.from('reactions')
       .select('id,media_id,user_id,emoji,created_at,profiles(id,display_name,nickname,avatar_path)')
       .in('media_id', ids);
     if (error) throw error;
-    reactionItems = (data || []).map(item => ({ ...item, profile: profiles.find(profile => profile.id === item.user_id) || item.profiles || null }));
-    mediaItems = mediaItems.map(item => ({ ...item, reactions: reactionItems.filter(reaction => reaction.media_id === item.id) }));
+    // Two near-simultaneous reaction requests may finish out of order. Only the
+    // latest request for the current feed may replace the local state.
+    if (requestSequence !== a5ReactionLoadSequence) return false;
+    if (idSignature !== mediaItems.map(item => item.id).join('|')) {
+      queueA5RealtimeUpdate('reactions');
+      return false;
+    }
+    reactionItems = (data || []).map(item => ({ ...item, emoji: normalizeReactionEmoji(item.emoji), profile: profiles.find(profile => profile.id === item.user_id) || item.profiles || null }));
+    const byMedia = new Map();
+    reactionItems.forEach(reaction => {
+      if (!byMedia.has(reaction.media_id)) byMedia.set(reaction.media_id, []);
+      byMedia.get(reaction.media_id).push(reaction);
+    });
+    mediaItems = mediaItems.map(item => ({ ...item, reactions: byMedia.get(item.id) || [] }));
+    return true;
   }
 
   async function loadCommentCounts() {
@@ -1208,11 +1235,20 @@
     const label = displayName(profile);
     return `<span class="${className}" title="${escapeAttr(label)}">${url ? `<img src="${escapeAttr(url)}" alt="Ảnh đại diện ${escapeAttr(label)}" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(label)}</span>`;
   }
+  function normalizeReactionEmoji(value) {
+    const emoji = String(value || '').normalize('NFC');
+    // Some devices/databases persist the heart with or without a variation
+    // selector. Treat those as the same ❤️ so it cannot split into two reactions.
+    if (emoji === '❤' || emoji === '❤︎' || emoji === '❤️') return '❤️';
+    return emoji;
+  }
+
   function userReactionSet(item) {
     const result = new Map();
     (item.reactions || reactionItems.filter(reaction => reaction.media_id === item.id)).forEach(reaction => {
-      if (!result.has(reaction.emoji)) result.set(reaction.emoji, []);
-      result.get(reaction.emoji).push(reaction);
+      const emoji = normalizeReactionEmoji(reaction.emoji);
+      if (!result.has(emoji)) result.set(emoji, []);
+      result.get(emoji).push(reaction);
     });
     return result;
   }
@@ -1231,7 +1267,13 @@
       : `<div class="media-visual-fallback">${item.media_type === 'video' ? '▷' : '✿'}</div>`;
     const caption = item.caption ? `<p class="media-note" style="--note-color:${safeColor(item.note_color)};--note-font:'${safeFont(item.note_font)}'">${escapeHTML(item.caption)}</p>` : '';
     const album = item.album_name ? `<button type="button" class="event-album-tag" data-action="filter-album" data-album-name="${escapeAttr(item.album_name)}">✦ ${escapeHTML(item.album_name)}</button>` : '';
-    const visibleEmojis = [...new Set([...REACTIONS.slice(0, 3), ...reactions.keys()])];
+    const visibleEmojis = [...new Set([...REACTIONS.slice(0, 3), ...reactions.keys()])].sort((a, b) => {
+      const aIndex = REACTIONS.indexOf(a), bIndex = REACTIONS.indexOf(b);
+      if (aIndex >= 0 && bIndex >= 0) return aIndex - bIndex;
+      if (aIndex >= 0) return -1;
+      if (bIndex >= 0) return 1;
+      return String(a).localeCompare(String(b));
+    });
     const reactButtons = visibleEmojis.map(emoji => {
       const group = reactions.get(emoji) || [];
       const mine = group.some(reaction => reaction.user_id === currentUser?.id);
@@ -1319,19 +1361,78 @@
     return template.content.firstElementChild;
   }
 
-  function a5PatchMediaCardLiveDetails(existing, desired) {
-    // Reactions are the only moderately frequent card-level changes. Patch that
-    // small strip, not the photo/video element or the rest of the card.
-    const oldReactionRow = existing.querySelector('.reaction-row');
-    const newReactionRow = desired.querySelector('.reaction-row');
-    if (oldReactionRow && newReactionRow && oldReactionRow.innerHTML !== newReactionRow.innerHTML) {
-      oldReactionRow.innerHTML = newReactionRow.innerHTML;
+  function a5PatchReactionRowInPlace(existingRow, desiredRow) {
+    if (!existingRow || !desiredRow) return;
+    const existingPills = [...existingRow.querySelectorAll(':scope > .reaction-pill')];
+    const existingByEmoji = new Map(existingPills.map(pill => [pill.querySelector('.reaction-emoji')?.dataset.emoji || '', pill]));
+    const desiredPills = [...desiredRow.querySelectorAll(':scope > .reaction-pill')];
+    const nextPills = [];
+
+    desiredPills.forEach(desiredPill => {
+      const desiredEmojiButton = desiredPill.querySelector('.reaction-emoji');
+      const emoji = desiredEmojiButton?.dataset.emoji || '';
+      let pill = existingByEmoji.get(emoji);
+      if (pill) {
+        existingByEmoji.delete(emoji);
+        pill.className = desiredPill.className;
+        const emojiButton = pill.querySelector('.reaction-emoji');
+        const countButton = pill.querySelector('.reaction-count');
+        const nextEmojiButton = desiredPill.querySelector('.reaction-emoji');
+        const nextCountButton = desiredPill.querySelector('.reaction-count');
+        if (emojiButton && nextEmojiButton) {
+          emojiButton.setAttribute('aria-label', nextEmojiButton.getAttribute('aria-label') || 'Thả cảm xúc');
+          emojiButton.setAttribute('data-emoji', nextEmojiButton.dataset.emoji || '');
+          if (emojiButton.textContent !== nextEmojiButton.textContent) emojiButton.textContent = nextEmojiButton.textContent;
+        }
+        if (countButton && nextCountButton) {
+          countButton.setAttribute('aria-label', nextCountButton.getAttribute('aria-label') || 'Xem ai đã thả cảm xúc');
+          if (countButton.textContent !== nextCountButton.textContent) countButton.textContent = nextCountButton.textContent;
+        }
+      } else {
+        pill = desiredPill.cloneNode(true);
+      }
+      nextPills.push(pill);
+    });
+
+    // Remove only emojis that no longer exist; keep the existing buttons/listeners
+    // for every unchanged emoji (especially the red heart ❤️).
+    existingByEmoji.forEach(pill => pill.remove());
+    const firstNonPill = existingRow.querySelector(':scope > .react-more, :scope > .card-react-prompt');
+    nextPills.forEach((pill, index) => {
+      const currentPills = [...existingRow.querySelectorAll(':scope > .reaction-pill')];
+      const currentAtIndex = currentPills[index] || null;
+      const anchor = currentAtIndex || firstNonPill;
+      if (anchor !== pill) existingRow.insertBefore(pill, anchor || null);
+    });
+  }
+
+  function a5PatchMediaCardLiveDetails(existing, desired, options = {}) {
+    if (options.reactions !== false) {
+      const oldReactionRow = existing.querySelector('.reaction-row');
+      const newReactionRow = desired.querySelector('.reaction-row');
+      a5PatchReactionRowInPlace(oldReactionRow, newReactionRow);
     }
-    const oldCommentCount = existing.querySelector('.memory-card-footer .comment-open-button strong');
-    const newCommentCount = desired.querySelector('.memory-card-footer .comment-open-button strong');
-    if (oldCommentCount && newCommentCount && oldCommentCount.textContent !== newCommentCount.textContent) {
-      oldCommentCount.textContent = newCommentCount.textContent;
+    if (options.comments !== false) {
+      const oldCommentCount = existing.querySelector('.memory-card-footer .comment-open-button strong');
+      const newCommentCount = desired.querySelector('.memory-card-footer .comment-open-button strong');
+      if (oldCommentCount && newCommentCount && oldCommentCount.textContent !== newCommentCount.textContent) {
+        oldCommentCount.textContent = newCommentCount.textContent;
+      }
     }
+  }
+
+  function a5PatchVisibleMediaLiveDetails(options = {}) {
+    const grids = ['#homeMediaGrid', '#galleryMediaGrid', '#profileMediaGrid']
+      .map(selector => $(selector)).filter(Boolean);
+    const itemsById = new Map(mediaItems.map(item => [String(item.id), item]));
+    grids.forEach(grid => {
+      [...grid.querySelectorAll('.memory-card[data-media-card]')].forEach((existing, index) => {
+        const item = itemsById.get(String(existing.dataset.mediaCard));
+        if (!item) return;
+        const desired = a5BuildMediaCardNode(item, index);
+        a5PatchMediaCardLiveDetails(existing, desired, options);
+      });
+    });
   }
 
   function renderMediaGridInPlace(container, items) {
@@ -2821,19 +2922,37 @@
 
   async function toggleReaction(mediaId, emoji) {
     if (!currentUser || !supabase) return;
-    const found = reactionItems.find(reaction => reaction.media_id === mediaId && reaction.user_id === currentUser.id && reaction.emoji === emoji);
-    const addingReaction = !found;
+    const lockKey = `${mediaId}::${emoji}`;
+    if (a5ReactionMutationLocks.has(lockKey)) return;
+    a5ReactionMutationLocks.add(lockKey);
+    const normalizedEmoji = normalizeReactionEmoji(emoji);
+    const foundRows = reactionItems.filter(reaction => reaction.media_id === mediaId && reaction.user_id === currentUser.id && normalizeReactionEmoji(reaction.emoji) === normalizedEmoji);
+    const addingReaction = foundRows.length === 0;
     try {
-      if (found) {
-        const { error } = await supabase.from('reactions').delete().eq('id', found.id).eq('user_id', currentUser.id);
+      if (foundRows.length) {
+        const foundIds = foundRows.map(reaction => reaction.id).filter(Boolean);
+        const { error } = await supabase.from('reactions').delete().eq('user_id', currentUser.id).in('id', foundIds);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('reactions').insert({ media_id: mediaId, user_id: currentUser.id, emoji });
+        const { error } = await supabase.from('reactions').insert({ media_id: mediaId, user_id: currentUser.id, emoji: normalizedEmoji });
         if (error && !String(error.message || '').toLowerCase().includes('duplicate')) throw error;
       }
-      await loadReactions(); renderAll();
+      // Refresh reaction data only, then patch the counts/selected state in place.
+      // Never call renderAll() here: it causes unrelated sections to rebuild and
+      // was racing the Realtime listener, making the ❤️ state appear to revert.
+      let reactionStateApplied = false;
+      try { reactionStateApplied = await loadReactions(); }
+      catch (syncError) { console.warn('Reaction saved; display will reconcile on next live event:', syncError?.message || syncError); }
+      // If this query lost a race to a newer refresh, let that refresh patch the UI
+      // instead of briefly applying stale ❤️ state.
+      if (reactionStateApplied) a5PatchVisibleMediaLiveDetails({ reactions: true, comments: false });
       if (addingReaction) void dispatchA5ActivityPush(mediaId, 'reaction');
-    } catch (error) { console.error('Reaction error:', error); toast('Chưa gửi được cảm xúc. Cậu thử lại nhé.', 'error'); }
+    } catch (error) {
+      console.error('Reaction error:', error);
+      toast('Chưa gửi được cảm xúc. Cậu thử lại nhé.', 'error');
+    } finally {
+      a5ReactionMutationLocks.delete(lockKey);
+    }
   }
   function openReactions(mediaId, emojiFilter = '') {
     const item = findMediaItem(mediaId);
