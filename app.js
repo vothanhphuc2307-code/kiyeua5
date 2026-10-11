@@ -77,6 +77,20 @@
   let classOfficerAssignments = [];
   let officersFeatureAvailable = false;
   let isA5SiteAdmin = false;
+
+  // Live updates: update data and visible sections in-place; never reload the document.
+  let a5RealtimeChannel = null;
+  let a5RealtimeActivityChannel = null;
+  let a5RealtimeUserId = null;
+  let a5RealtimeSubscribed = false;
+  let a5RealtimeFallbackTimer = null;
+  let a5RealtimeDebounceTimer = null;
+  let a5RealtimePendingKinds = new Set();
+  let a5RealtimeSyncBusy = false;
+  let a5RealtimeMediaSignature = '';
+  let a5RealtimeProfileSignature = '';
+  let a5YearbookPendingLiveUpdate = false;
+  let a5RealtimeLifecycleBound = false;
   let deferredA5InstallPrompt = null;
   let a5ServiceWorkerRegistration = null;
   const A5_PUSH_PUBLIC_KEY = String(window.A5_PUSH_CONFIG?.VAPID_PUBLIC_KEY || '').trim();
@@ -548,6 +562,7 @@
     window.setTimeout(() => $('#splash')?.classList.add('done'), 700);
     registerA5ServiceWorker();
     updateA5InstallButtons();
+    setupA5LiveLifecycleEvents();
     bindEvents();
     if (!isConfigured() || !window.supabase?.createClient) {
       showAuthScreen();
@@ -566,6 +581,7 @@
         // Defer application calls so the auth callback cannot hold the auth lock.
         window.setTimeout(() => {
           if (event === 'SIGNED_OUT') {
+            stopA5RealtimeSubscriptions();
             currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; classroomSeats = []; classroomFeatureAvailable = false; classOfficerAssignments = []; officersFeatureAvailable = false; isA5SiteAdmin = false; seatPromptShownForUserId = null; lastUserId = null;
             yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookOpened = false; yearbookSpreadIndex = 0;
             showAuthScreen();
@@ -613,13 +629,16 @@
     if (sameUser) {
       await syncLinkedProviders();
       renderProfile();
+      setupA5RealtimeSubscriptions();
       return;
     }
+    stopA5RealtimeSubscriptions();
     lastUserId = session.user.id;
     await loadData(true);
     await syncLinkedProviders();
     renderAll();
     updateA5PushSettingsUi();
+    setupA5RealtimeSubscriptions();
   }
 
   async function signOut() {
@@ -759,6 +778,8 @@
         const mediaUrl = mediaUrlMap.get(item.storage_path) || '';
         return { ...item, url: mediaUrl, profiles: owner };
       });
+      a5RealtimeMediaSignature = a5LiveMediaSignature(rawMedia);
+      a5RealtimeProfileSignature = a5LiveProfileSignature(rawProfiles);
       if (token !== pageLoadToken) return;
       // These queries are independent. Run them together to reduce serial network waits.
       await Promise.all([
@@ -781,6 +802,275 @@
       $('#galleryMediaGrid').innerHTML = errorCard('Album chưa sẵn sàng', 'Hãy kiểm tra thiết lập backend theo README.');
       $('#peopleGrid').innerHTML = errorCard('Chưa tải được thành viên', 'Hãy kiểm tra thiết lập backend theo README.');
       toast(`Tải dữ liệu thất bại: ${message.slice(0, 95)}`, 'error', 6500);
+    }
+  }
+
+  function a5LiveMediaSignature(rows) {
+    return JSON.stringify((rows || []).map(row => [
+      row.id, row.user_id, row.media_type, row.storage_path, row.caption,
+      row.note_color, row.note_font, row.album_name, row.created_at, row.updated_at
+    ]));
+  }
+
+  function a5LiveProfileSignature(rows) {
+    return JSON.stringify((rows || []).map(row => [
+      row.id, row.display_name, row.nickname, row.bio, row.dream_job,
+      row.hobbies, row.future_wishes, row.avatar_path, row.profile_color,
+      row.linked_providers, row.created_at, row.updated_at
+    ]));
+  }
+
+  function stopA5RealtimeSubscriptions() {
+    const oldChannel = a5RealtimeChannel;
+    const oldActivityChannel = a5RealtimeActivityChannel;
+    a5RealtimeChannel = null;
+    a5RealtimeActivityChannel = null;
+    a5RealtimeUserId = null;
+    a5RealtimeSubscribed = false;
+    a5RealtimePendingKinds.clear();
+    if (a5RealtimeDebounceTimer) window.clearTimeout(a5RealtimeDebounceTimer);
+    a5RealtimeDebounceTimer = null;
+    if (a5RealtimeFallbackTimer) window.clearInterval(a5RealtimeFallbackTimer);
+    a5RealtimeFallbackTimer = null;
+    if (oldChannel && supabase) {
+      try { void supabase.removeChannel(oldChannel); }
+      catch (error) { console.warn('A5 media live channel cleanup:', error?.message || error); }
+    }
+    if (oldActivityChannel && supabase) {
+      try { void supabase.removeChannel(oldActivityChannel); }
+      catch (error) { console.warn('A5 activity live channel cleanup:', error?.message || error); }
+    }
+  }
+
+  function startA5RealtimeFallback() {
+    if (a5RealtimeFallbackTimer) return;
+    // Only used when Realtime is disconnected. It synchronizes data, not the page.
+    a5RealtimeFallbackTimer = window.setInterval(() => {
+      if (document.visibilityState !== 'visible' || !currentUser || !supabase) return;
+      queueA5RealtimeUpdate('media');
+    }, 90000);
+  }
+
+  function setupA5LiveLifecycleEvents() {
+    if (a5RealtimeLifecycleBound) return;
+    a5RealtimeLifecycleBound = true;
+    const catchUp = () => {
+      if (!currentUser || !supabase || document.visibilityState === 'hidden') return;
+      // Reconcile any events missed while the app/device slept, without refreshing the page.
+      ['media', 'profiles', 'reactions', 'comments', 'notifications'].forEach(queueA5RealtimeUpdate);
+    };
+    document.addEventListener('visibilitychange', catchUp);
+    window.addEventListener('online', catchUp);
+  }
+
+  function setupA5RealtimeSubscriptions() {
+    if (!supabase || !currentUser) return;
+    if (a5RealtimeChannel && a5RealtimeUserId === currentUser.id) return;
+    stopA5RealtimeSubscriptions();
+    a5RealtimeUserId = currentUser.id;
+    // Keep the core media channel separate: an optional social table missing from a
+    // legacy project must never stop photo/video live updates.
+    const channel = supabase.channel(`a5-media-${currentUser.id.slice(0, 8)}-${Date.now().toString(36)}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'media_items' }, () => queueA5RealtimeUpdate('media'));
+    a5RealtimeChannel = channel;
+    channel.subscribe(status => {
+      if (a5RealtimeChannel !== channel) return;
+      if (status === 'SUBSCRIBED') {
+        a5RealtimeSubscribed = true;
+        if (a5RealtimeFallbackTimer) window.clearInterval(a5RealtimeFallbackTimer);
+        a5RealtimeFallbackTimer = null;
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        a5RealtimeSubscribed = false;
+        console.warn('A5 media Realtime is unavailable; temporary in-page sync fallback enabled.', status);
+        startA5RealtimeFallback();
+      }
+    });
+
+    const activityChannel = supabase.channel(`a5-activity-${currentUser.id.slice(0, 8)}-${Date.now().toString(36)}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => queueA5RealtimeUpdate('profiles'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reactions' }, () => queueA5RealtimeUpdate('reactions'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'media_comments' }, () => queueA5RealtimeUpdate('comments'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => queueA5RealtimeUpdate('notifications'));
+    a5RealtimeActivityChannel = activityChannel;
+    activityChannel.subscribe(status => {
+      if (a5RealtimeActivityChannel !== activityChannel) return;
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        console.warn('A5 optional activity updates are unavailable; photo/video live updates remain independent.', status);
+      }
+    });
+  }
+
+  function queueA5RealtimeUpdate(kind) {
+    if (!currentUser || !supabase) return;
+    a5RealtimePendingKinds.add(kind);
+    if (a5RealtimeDebounceTimer) window.clearTimeout(a5RealtimeDebounceTimer);
+    a5RealtimeDebounceTimer = window.setTimeout(() => {
+      a5RealtimeDebounceTimer = null;
+      void processA5RealtimeUpdates();
+    }, 420);
+  }
+
+  async function syncA5LiveSnapshot() {
+    const requestedUserId = currentUser?.id;
+    if (!requestedUserId || !supabase) return { profilesChanged: false, mediaChanged: false };
+    const [profileResult, mediaResult] = await Promise.all([
+      supabase.from('profiles')
+        .select('id,display_name,nickname,bio,dream_job,hobbies,future_wishes,avatar_path,profile_color,linked_providers,created_at,updated_at')
+        .order('created_at', { ascending: true }),
+      supabase.from('media_items')
+        .select('id,user_id,media_type,storage_path,caption,note_color,note_font,album_name,created_at,updated_at')
+        .order('created_at', { ascending: false }).limit(200)
+    ]);
+    if (profileResult.error) throw profileResult.error;
+    if (mediaResult.error) throw mediaResult.error;
+    if (!currentUser || currentUser.id !== requestedUserId) return { profilesChanged: false, mediaChanged: false };
+
+    const rawProfiles = profileResult.data || [];
+    const rawMedia = mediaResult.data || [];
+    const nextProfileSignature = a5LiveProfileSignature(rawProfiles);
+    const nextMediaSignature = a5LiveMediaSignature(rawMedia);
+    const profilesChanged = nextProfileSignature !== a5RealtimeProfileSignature;
+    const mediaChanged = nextMediaSignature !== a5RealtimeMediaSignature;
+    if (!profilesChanged && !mediaChanged) return { profilesChanged: false, mediaChanged: false };
+
+    const oldProfiles = new Map(profiles.map(profile => [profile.id, profile]));
+    const oldMedia = new Map(mediaItems.map(item => [item.id, item]));
+    const [avatarUrlMap, mediaUrlMap] = await Promise.all([
+      resolveSignedUrls(AVATAR_BUCKET, rawProfiles.map(profile => profile.avatar_path)),
+      resolveSignedUrls(MEDIA_BUCKET, rawMedia.map(item => item.storage_path))
+    ]);
+    if (!currentUser || currentUser.id !== requestedUserId) return { profilesChanged: false, mediaChanged: false };
+
+    profiles = rawProfiles.map(profile => {
+      const old = oldProfiles.get(profile.id);
+      const avatarUrl = profile.avatar_path ? (avatarUrlMap.get(profile.avatar_path) || (old?.avatar_path === profile.avatar_path ? old.avatar_url : '') || '') : '';
+      return { ...profile, avatar_url: avatarUrl };
+    });
+    currentProfile = profiles.find(profile => profile.id === currentUser?.id) || currentProfile;
+
+    mediaItems = rawMedia.map(item => {
+      const old = oldMedia.get(item.id);
+      const mediaUrl = item.storage_path
+        ? (mediaUrlMap.get(item.storage_path) || (old?.storage_path === item.storage_path ? old.url : '') || '')
+        : '';
+      return {
+        ...item,
+        url: mediaUrl,
+        profiles: profiles.find(profile => profile.id === item.user_id) || null,
+        reactions: old?.reactions || []
+      };
+    });
+    a5RealtimeProfileSignature = nextProfileSignature;
+    a5RealtimeMediaSignature = nextMediaSignature;
+    return { profilesChanged, mediaChanged };
+  }
+
+  function captureA5VisibleMediaAnchor() {
+    if (!['home', 'gallery'].includes(activeTab)) return null;
+    const grid = activeTab === 'gallery' ? $('#galleryMediaGrid') : $('#homeMediaGrid');
+    if (!grid) return null;
+    const card = [...grid.querySelectorAll('[data-media-card]')].find(element => {
+      const rect = element.getBoundingClientRect();
+      return rect.bottom > 0 && rect.top < window.innerHeight;
+    });
+    if (!card) return null;
+    return { id: card.dataset.mediaCard, top: card.getBoundingClientRect().top };
+  }
+
+  function restoreA5VisibleMediaAnchor(anchor) {
+    if (!anchor) return;
+    window.requestAnimationFrame(() => {
+      const grid = activeTab === 'gallery' ? $('#galleryMediaGrid') : (activeTab === 'home' ? $('#homeMediaGrid') : null);
+      const card = grid && [...grid.querySelectorAll('[data-media-card]')].find(element => element.dataset.mediaCard === anchor.id);
+      if (!card) return;
+      const delta = card.getBoundingClientRect().top - anchor.top;
+      if (Math.abs(delta) > 2) window.scrollBy({ top: delta, left: 0, behavior: 'auto' });
+    });
+  }
+
+  function invalidateA5YearbookAfterLiveChange() {
+    if (activeTab === 'yearbook' && yearbookOpened) {
+      // Don't interrupt someone while they're reading a page; refresh the cache after they leave.
+      a5YearbookPendingLiveUpdate = true;
+      return;
+    }
+    yearbookLoadGeneration += 1;
+    yearbookLoading = false;
+    yearbookMediaCache = null;
+    yearbookSignedUrls.clear();
+    yearbookRenderGeneration += 1;
+  }
+
+  async function processA5RealtimeUpdates() {
+    if (a5RealtimeSyncBusy || !supabase || !currentUser) {
+      if (a5RealtimePendingKinds.size && currentUser && supabase) {
+        a5RealtimeDebounceTimer = window.setTimeout(() => {
+          a5RealtimeDebounceTimer = null;
+          void processA5RealtimeUpdates();
+        }, 500);
+      }
+      return;
+    }
+    const kinds = new Set(a5RealtimePendingKinds);
+    a5RealtimePendingKinds.clear();
+    if (!kinds.size) return;
+    const processingUserId = currentUser.id;
+    a5RealtimeSyncBusy = true;
+    try {
+      let snapshot = { profilesChanged: false, mediaChanged: false };
+      if (kinds.has('media') || kinds.has('profiles')) snapshot = await syncA5LiveSnapshot();
+      if (!currentUser || currentUser.id !== processingUserId) return;
+      const reactionsChanged = kinds.has('reactions') || snapshot.mediaChanged;
+      const commentsChanged = kinds.has('comments') || snapshot.mediaChanged;
+
+      if (reactionsChanged) {
+        try { await loadReactions(); }
+        catch (error) { console.warn('A5 live reactions sync was skipped:', error?.message || error); }
+      }
+      if (commentsChanged) {
+        try { await loadCommentCounts(); }
+        catch (error) { console.warn('A5 live comment counts sync was skipped:', error?.message || error); }
+      }
+      if (kinds.has('comments') || kinds.has('reactions') || kinds.has('notifications')) {
+        await loadNotifications();
+        if (!$('#notificationsModal')?.classList.contains('hidden')) renderNotificationsList();
+      }
+
+      const mediaOrProfileChanged = snapshot.mediaChanged || snapshot.profilesChanged;
+      if (snapshot.mediaChanged) {
+        populateMonthFilters();
+        renderOnThisDay();
+        invalidateA5YearbookAfterLiveChange();
+      } else if (kinds.has('media')) {
+        // The changed row may be older than the visible 200-item feed but still in the yearbook.
+        invalidateA5YearbookAfterLiveChange();
+      }
+      const shouldRerenderMedia = mediaOrProfileChanged || reactionsChanged || commentsChanged;
+      if (shouldRerenderMedia) {
+        const anchor = captureA5VisibleMediaAnchor();
+        if (activeTab === 'home') renderHomeMedia();
+        else if (activeTab === 'gallery') renderGallery();
+        if ((snapshot.profilesChanged || snapshot.mediaChanged) && activeTab === 'people') renderPeople();
+        if (snapshot.profilesChanged && activeTab === 'profile') renderProfile();
+        renderNotificationBadge();
+        restoreA5VisibleMediaAnchor(anchor);
+      }
+
+      if (kinds.has('comments') && activeCommentsMediaId && !$('#commentsModal')?.classList.contains('hidden') &&
+          document.activeElement !== $('#commentInput') && !editingCommentId) {
+        await refreshComments(activeCommentsMediaId, true);
+      }
+    } catch (error) {
+      // Realtime is an enhancement: never replace the user's screen with an error state.
+      console.warn('A5 live update could not be applied. The next event will retry:', error?.message || error);
+    } finally {
+      a5RealtimeSyncBusy = false;
+      if (a5RealtimePendingKinds.size && !a5RealtimeDebounceTimer) {
+        a5RealtimeDebounceTimer = window.setTimeout(() => {
+          a5RealtimeDebounceTimer = null;
+          void processA5RealtimeUpdates();
+        }, 220);
+      }
     }
   }
 
@@ -1548,6 +1838,10 @@
   }
   function switchTab(tab) {
     if (!['home', 'gallery', 'yearbook', 'people', 'profile'].includes(tab)) return;
+    if (activeTab === 'yearbook' && tab !== 'yearbook' && a5YearbookPendingLiveUpdate) {
+      yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookRenderGeneration += 1;
+      a5YearbookPendingLiveUpdate = false;
+    }
     activeTab = tab;
     updateActiveTab();
     if (tab === 'gallery') renderGallery();
@@ -2251,7 +2545,7 @@
     await refreshComments(mediaId);
   }
 
-  async function refreshComments(mediaId) {
+  async function refreshComments(mediaId, fromRealtime = false) {
     if (!supabase || !currentUser || !commentsEnabled) return;
     try {
       const { data, error } = await supabase.from('media_comments')
@@ -2268,7 +2562,7 @@
         const canDelete = ownComment || canModerate;
         return `<article class="comment-row" data-comment-row="${escapeAttr(comment.id)}"><div class="comment-avatar">${avatarHTML(profile, 'avatar')}</div><div class="comment-bubble"><div class="comment-topline"><strong>${escapeHTML(displayName(profile))}${ownComment ? ' <span class="comment-me">· cậu</span>' : ''}</strong><time title="${escapeAttr(new Date(comment.created_at).toISOString())}">${escapeHTML(formatDate(comment.created_at, true))}</time></div><p>${escapeHTML(comment.body)}</p>${ownComment || canDelete ? `<div class="comment-actions">${ownComment ? `<button type="button" data-action="edit-comment" data-comment-id="${escapeAttr(comment.id)}">Sửa</button>` : ''}${canDelete ? `<button type="button" data-action="delete-comment" data-comment-id="${escapeAttr(comment.id)}">Xóa</button>` : ''}</div>` : ''}</div></article>`;
       }).join('') : '<div class="comments-empty"><span>💌</span><strong>Chưa có bình luận nào</strong><p>Hãy để lại lời nhắn đầu tiên cho kỷ niệm này nhé.</p></div>';
-      renderHomeMedia(); renderGallery(); renderProfile();
+      if (!fromRealtime) { renderHomeMedia(); renderGallery(); renderProfile(); }
     } catch (error) {
       console.error('Load comments failed:', error);
       const msg = String(error?.message || '');
