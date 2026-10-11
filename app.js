@@ -903,11 +903,13 @@
   function queueA5RealtimeUpdate(kind) {
     if (!currentUser || !supabase) return;
     a5RealtimePendingKinds.add(kind);
-    if (a5RealtimeDebounceTimer) window.clearTimeout(a5RealtimeDebounceTimer);
+    // Fixed-window coalescing: a burst of simultaneous uploads is reconciled in
+    // batches instead of restarting a full-grid render for every Postgres event.
+    if (a5RealtimeDebounceTimer) return;
     a5RealtimeDebounceTimer = window.setTimeout(() => {
       a5RealtimeDebounceTimer = null;
       void processA5RealtimeUpdates();
-    }, 420);
+    }, 650);
   }
 
   async function syncA5LiveSnapshot() {
@@ -1020,8 +1022,10 @@
       let snapshot = { profilesChanged: false, mediaChanged: false };
       if (kinds.has('media') || kinds.has('profiles')) snapshot = await syncA5LiveSnapshot();
       if (!currentUser || currentUser.id !== processingUserId) return;
-      const reactionsChanged = kinds.has('reactions') || snapshot.mediaChanged;
-      const commentsChanged = kinds.has('comments') || snapshot.mediaChanged;
+      // A new media row has no reactions/comments yet. Don't refetch both entire
+      // derived tables on every upload; their own Realtime events keep them current.
+      const reactionsChanged = kinds.has('reactions');
+      const commentsChanged = kinds.has('comments');
 
       if (reactionsChanged) {
         try { await loadReactions(); }
@@ -1257,11 +1261,129 @@
     }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 4);
     const message = $('#onThisDayMessage');
     if (message) message.textContent = matches.length ? `Hôm nay, mình cùng nhớ lại ${matches.length} kỷ niệm từ những năm trước.` : 'Từ hôm nay, hãy lưu thật nhiều điều — rồi kỷ niệm cũ sẽ trở về vào đúng ngày này.';
-    grid.innerHTML = matches.length ? matches.map(item => {
+
+    if (!matches.length) {
+      const existingEmpty = grid.querySelector(':scope > .on-this-day-empty');
+      if (existingEmpty && grid.children.length === 1) return;
+      grid.innerHTML = '<div class="on-this-day-empty">💌 Chưa có kỷ niệm từ những năm trước vào ngày hôm nay. Lưu một khoảnh khắc nhé — nó có thể trở lại trong tương lai.</div>';
+      return;
+    }
+
+    const existing = new Map([...grid.querySelectorAll(':scope > .on-this-day-item[data-on-day-media-card]')]
+      .map(node => [node.dataset.onDayMediaCard, node]));
+    const desiredNodes = matches.map(item => {
       const owner = profiles.find(profile => profile.id === item.user_id) || {};
-      const preview = item.url ? (item.media_type === 'video' ? `<span class="media-video-placeholder on-day-video-placeholder" aria-hidden="true"><span>▶</span><small>VIDEO</small></span>` : `<img src="${escapeAttr(item.url)}" alt="" loading="lazy" decoding="async"/>`) : '<span>♡</span>';
-      return `<button type="button" class="on-this-day-item" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}"><span class="on-this-day-thumb">${preview}</span><span class="on-this-day-item-copy"><strong>${escapeHTML(item.caption || 'Một ngày đáng nhớ')}</strong><small>${escapeHTML(displayName(owner))} · ${escapeHTML(formatDate(item.created_at, false))}</small></span></button>`;
-    }).join('') : '<div class="on-this-day-empty">💌 Chưa có kỷ niệm từ những năm trước vào ngày hôm nay. Lưu một khoảnh khắc nhé — nó có thể trở lại trong tương lai.</div>';
+      const preview = item.url
+        ? (item.media_type === 'video' ? '<span class="media-video-placeholder on-day-video-placeholder" aria-hidden="true"><span>▶</span><small>VIDEO</small></span>' : `<img src="${escapeAttr(item.url)}" alt="" loading="lazy" decoding="async"/>`)
+        : '<span>♡</span>';
+      const signature = JSON.stringify([item.id, item.caption, item.url, item.media_type, item.user_id, displayName(owner), item.created_at]);
+      const template = document.createElement('template');
+      template.innerHTML = `<button type="button" class="on-this-day-item" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" data-on-day-media-card="${escapeAttr(item.id)}"><span class="on-this-day-thumb">${preview}</span><span class="on-this-day-item-copy"><strong>${escapeHTML(item.caption || 'Một ngày đáng nhớ')}</strong><small>${escapeHTML(displayName(owner))} · ${escapeHTML(formatDate(item.created_at, false))}</small></span></button>`;
+      const fresh = template.content.firstElementChild;
+      let node = existing.get(String(item.id));
+      if (node) {
+        existing.delete(String(item.id));
+        if (node.dataset.a5OnDaySignature !== signature) {
+          fresh.dataset.a5OnDaySignature = signature;
+          node = fresh;
+        }
+      } else {
+        node = fresh;
+        node.dataset.a5OnDaySignature = signature;
+      }
+      return node;
+    });
+    desiredNodes.forEach((node, index) => {
+      const atIndex = grid.children[index] || null;
+      if (atIndex !== node) grid.insertBefore(node, atIndex);
+    });
+    const keep = new Set(desiredNodes);
+    [...grid.children].forEach(node => { if (!keep.has(node)) node.remove(); });
+  }
+
+  // Keep existing media-card DOM nodes when realtime data changes.
+  // This prevents every card's intro animation from restarting for each database event.
+  function a5MediaCardContentSignature(item) {
+    const owner = profiles.find(profile => profile.id === item.user_id) || item.profiles || {};
+    return JSON.stringify([
+      item.id, item.user_id, item.media_type, item.storage_path, item.url,
+      item.caption, item.note_color, item.note_font, item.album_name, item.created_at,
+      Boolean(currentUser && item.user_id === currentUser.id),
+      displayName(owner), owner.nickname || '', owner.avatar_url || '', owner.profile_color || ''
+    ]);
+  }
+
+  function a5BuildMediaCardNode(item, index) {
+    const template = document.createElement('template');
+    template.innerHTML = renderMediaCard(item, index).trim();
+    return template.content.firstElementChild;
+  }
+
+  function a5PatchMediaCardLiveDetails(existing, desired) {
+    // Reactions are the only moderately frequent card-level changes. Patch that
+    // small strip, not the photo/video element or the rest of the card.
+    const oldReactionRow = existing.querySelector('.reaction-row');
+    const newReactionRow = desired.querySelector('.reaction-row');
+    if (oldReactionRow && newReactionRow && oldReactionRow.innerHTML !== newReactionRow.innerHTML) {
+      oldReactionRow.innerHTML = newReactionRow.innerHTML;
+    }
+    const oldCommentCount = existing.querySelector('.memory-card-footer .comment-open-button strong');
+    const newCommentCount = desired.querySelector('.memory-card-footer .comment-open-button strong');
+    if (oldCommentCount && newCommentCount && oldCommentCount.textContent !== newCommentCount.textContent) {
+      oldCommentCount.textContent = newCommentCount.textContent;
+    }
+  }
+
+  function renderMediaGridInPlace(container, items) {
+    if (!container) return;
+    const wasRendered = container.dataset.a5GridHasRendered === 'true';
+    const oldCards = [...container.children].filter(node => node.matches?.('.memory-card[data-media-card]'));
+    const oldById = new Map(oldCards.map(node => [node.dataset.mediaCard, node]));
+    const nextNodes = [];
+
+    (items || []).forEach((item, index) => {
+      const id = String(item.id);
+      const signature = a5MediaCardContentSignature(item);
+      const desired = a5BuildMediaCardNode(item, index);
+      let node = oldById.get(id);
+
+      if (node) {
+        oldById.delete(id);
+        if (node.dataset.a5CardContentSignature !== signature) {
+          // Only the changed card is replaced (e.g. caption/photo was edited).
+          // Keep its location and suppress a replay of the entrance animation.
+          desired.dataset.a5CardContentSignature = signature;
+          desired.classList.add('a5-card-stable');
+          desired.style.animationDelay = '';
+          node = desired;
+        } else {
+          a5PatchMediaCardLiveDetails(node, desired);
+          node.classList.remove('a5-live-new-card');
+          node.classList.add('a5-card-stable');
+          node.dataset.a5CardContentSignature = signature;
+        }
+      } else {
+        desired.dataset.a5CardContentSignature = signature;
+        if (wasRendered) {
+          // A newly arrived post may animate softly; old cards remain untouched.
+          desired.classList.add('a5-live-new-card');
+          desired.style.animationDelay = '';
+        }
+        node = desired;
+      }
+      nextNodes.push(node);
+    });
+
+    // Reorder existing DOM nodes rather than rebuilding the entire grid.
+    nextNodes.forEach((node, index) => {
+      const currentAtIndex = container.children[index] || null;
+      if (currentAtIndex !== node) container.insertBefore(node, currentAtIndex);
+    });
+    // Remove only cards no longer in the current filtered result, plus any old
+    // loading/empty child that is still inside this grid container.
+    const keep = new Set(nextNodes);
+    [...container.children].forEach(node => { if (!keep.has(node)) node.remove(); });
+    container.dataset.a5GridHasRendered = 'true';
   }
 
   function renderHomeMedia() {
@@ -1271,7 +1393,7 @@
     if (homeAlbumFilter !== 'all') items = items.filter(item => item.album_name === homeAlbumFilter);
     const matchedCount = items.length;
     items = items.slice(0, 6);
-    $('#homeMediaGrid').innerHTML = items.length ? items.map(renderMediaCard).join('') : '';
+    renderMediaGridInPlace($('#homeMediaGrid'), items);
     $('#homeEmpty').classList.toggle('hidden', items.length !== 0);
     $('#homeMediaGrid').classList.toggle('hidden', items.length === 0);
     $('#homeMediaCount').textContent = `${matchedCount} kỷ niệm khớp bộ lọc`;
@@ -1288,7 +1410,7 @@
     if (galleryAlbumFilter !== 'all') items = items.filter(item => item.album_name === galleryAlbumFilter);
     if ($('#gallerySort')?.value === 'oldest') items.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     else items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    $('#galleryMediaGrid').innerHTML = items.map(renderMediaCard).join('');
+    renderMediaGridInPlace($('#galleryMediaGrid'), items);
     $('#galleryEmpty').classList.toggle('hidden', items.length !== 0);
     $('#galleryMediaGrid').classList.toggle('hidden', items.length === 0);
     $$('[data-gallery-filter]').forEach(button => button.classList.toggle('active', button.dataset.galleryFilter === galleryFilter));
@@ -1646,7 +1768,7 @@
     $('#myVideoCount').textContent = mine.filter(item => item.media_type === 'video').length;
     const myIds = new Set(mine.map(item => item.id));
     $('#myReactionCount').textContent = reactionItems.filter(reaction => myIds.has(reaction.media_id) && reaction.user_id !== currentUser.id).length;
-    $('#profileMediaGrid').innerHTML = mine.slice(0, 6).map(renderMediaCard).join('');
+    renderMediaGridInPlace($('#profileMediaGrid'), mine.slice(0, 6));
     $('#profileMediaEmpty').classList.toggle('hidden', mine.length !== 0);
     $('#profileMediaGrid').classList.toggle('hidden', mine.length === 0);
   }

@@ -857,3 +857,17 @@ img, video { max-width: 100%; }
   .pwa-install-button { width:31px;min-width:31px;height:32px; }
   .topbar-actions { gap:5px; }
 }
+
+
+/* A5 LIVE UPDATES v1.2 — preserve existing cards during Realtime reconciliation. */
+.memory-card.a5-card-stable { animation: none !important; }
+@keyframes a5LiveCardInsert {
+  from { opacity: 0; transform: translate3d(0, 7px, 0) scale(.997); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+.memory-card.a5-live-new-card {
+  animation: a5LiveCardInsert .24s ease-out both !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .memory-card.a5-live-new-card { animation: none !important; }
+}
