@@ -199,6 +199,34 @@
 
   <div class="confirm-backdrop hidden" id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle"><div class="confirm-card"><div class="confirm-icon">♡</div><h3 id="confirmTitle">Xóa kỷ niệm này?</h3><p id="confirmMessage">Kỷ niệm sẽ bị xóa khỏi album.</p><div class="confirm-actions"><button class="outline-button" data-action="close-modal">Thôi, giữ lại</button><button class="danger-button" id="confirmDeleteButton">Xóa kỷ niệm</button></div></div></div>
 
+  <!-- A5 music dock: official YouTube embeds, only loaded after a deliberate selection. -->
+  <section id="a5MusicWidget" class="a5-music-widget hidden" aria-label="Nhạc thanh xuân A5">
+    <button type="button" id="a5MusicToggle" class="a5-music-fab" data-action="toggle-music-panel" aria-expanded="false" aria-controls="a5MusicPanel">
+      <span class="a5-music-fab-icon" aria-hidden="true">♫</span><span>Nhạc A5</span><span class="a5-music-fab-dot" aria-hidden="true"></span>
+    </button>
+    <section id="a5MusicPanel" class="a5-music-panel hidden" role="dialog" aria-label="Giai điệu thanh xuân" aria-modal="false">
+      <header class="a5-music-header">
+        <div class="a5-music-heading-icon" aria-hidden="true">♫</div>
+        <div class="a5-music-heading-copy"><span class="a5-music-overline">SOUNDTRACK OF A5</span><h2>Giai điệu thanh xuân</h2><p>Chọn bài cậu muốn nghe hôm nay ♡</p></div>
+        <button type="button" class="a5-music-close" data-action="close-music-player" aria-label="Dừng nhạc và đóng bảng" title="Dừng nhạc và đóng">×</button>
+      </header>
+      <div class="a5-music-panel-body">
+        <div id="a5MusicNowPlaying" class="a5-music-now-playing" aria-live="polite">
+          <span class="a5-music-now-icon" aria-hidden="true">🎧</span>
+          <div class="a5-music-now-copy"><strong id="a5MusicCurrentTitle">Chưa chọn bài hát</strong><small id="a5MusicCurrentArtist">Nhạc mặc định tắt · chọn một bài để bắt đầu</small></div>
+          <span id="a5MusicPlayingBadge" class="a5-music-playing-badge">READY</span>
+        </div>
+        <div id="a5MusicPlayerWrap" class="a5-music-player-wrap">
+          <div class="a5-music-empty-player"><span aria-hidden="true">🎶</span><strong>Một giai điệu cho ngày đi học</strong><p>Chọn bài ở danh sách bên dưới. Video sẽ phát ngay trong web bằng trình phát YouTube chính thức.</p></div>
+        </div>
+        <div class="a5-music-player-foot"><span>Điều chỉnh âm lượng / tạm dừng ngay trên trình phát.</span><a id="a5MusicOpenYoutube" href="https://www.youtube.com/" target="_blank" rel="noopener noreferrer" class="hidden">Mở trên YouTube ↗</a></div>
+        <div class="a5-music-list-heading"><div><span class="a5-music-overline">A5 PLAYLIST</span><h3>Những bài mình muốn nhớ</h3></div><span class="a5-music-list-count" id="a5MusicTrackCount">05 bài</span></div>
+        <div id="a5MusicTrackList" class="a5-music-track-list" role="list" aria-label="Danh sách bài hát"></div>
+        <p class="a5-music-note">♡ Nhạc không tự phát khi mở web. Cần kết nối mạng; đóng bảng này sẽ dừng bài đang phát. Một số video có thể bị chủ sở hữu giới hạn nhúng — khi đó hãy mở trực tiếp trên YouTube.</p>
+      </div>
+    </section>
+  </section>
+
   <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
   <div class="keyboard-help hidden" id="keyboardHelp">Bấm <kbd>Esc</kbd> để đóng cửa sổ</div>
 </body>

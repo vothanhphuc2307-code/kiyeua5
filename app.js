@@ -5,6 +5,13 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const REACTIONS = ['🩷', '❤️', '😂', '😭', '🥹', '😍', '✨', '🫶', '🔥', '🤡', '👍', '💯'];
+  const A5_MUSIC_TRACKS = [
+    { key: 'dong-bang', title: 'Mình cùng nhau đóng băng', artist: 'Thùy Chi · Official M/V', videoId: 'zCpJ9Irw4EQ', source: '1989s Entertainment', url: 'https://www.youtube.com/watch?v=zCpJ9Irw4EQ' },
+    { key: 'hen-thanh-xuan', title: 'Có hẹn với thanh xuân', artist: 'MONSTAR · Official MV', videoId: 'vpRi8S6uXAg', source: 'ST.319 Entertainment', url: 'https://www.youtube.com/watch?v=vpRi8S6uXAg' },
+    { key: 'nhu-ngay-hom-qua', title: 'Như ngày hôm qua', artist: 'Sơn Tùng M-TP · YouTube Music', videoId: 'YtkgtlfKaxM', source: 'Sơn Tùng M-TP', url: 'https://www.youtube.com/watch?v=YtkgtlfKaxM' },
+    { key: 'thanh-xuan', title: 'Thanh Xuân', artist: 'Da LAB · Official MV', videoId: 'GgQFO8dL5XQ', source: 'Da LAB Official', url: 'https://www.youtube.com/watch?v=GgQFO8dL5XQ' },
+    { key: 'link-ban-gui', title: 'Video trong đường link cậu gửi', artist: 'YouTube · bắt đầu từ 16:31', videoId: 'Rz1pbtqBdVQ', start: 991, source: 'Liên kết do cậu cung cấp', url: 'https://www.youtube.com/watch?v=Rz1pbtqBdVQ&list=RDRz1pbtqBdVQ&start_radio=1&t=991s' }
+  ];
   const FONT_ALLOWLIST = ['Nunito', 'Patrick Hand', 'Playfair Display', 'DM Sans'];
   const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'];
   const VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v'];
@@ -61,6 +68,7 @@
   let trimObjectUrl = null;
   let trimDuration = 0;
   let isTrimming = false;
+  let activeMusicTrackKey = null;
 
   function escapeHTML(value) {
     return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -175,7 +183,91 @@
       !String(config.SUPABASE_URL).includes('YOUR_SUPABASE') &&
       !String(config.SUPABASE_ANON_KEY).includes('YOUR_SUPABASE'));
   }
+  function renderMusicTrackList() {
+    const list = $('#a5MusicTrackList');
+    if (!list) return;
+    const count = $('#a5MusicTrackCount');
+    if (count) count.textContent = `${A5_MUSIC_TRACKS.length} bài`;
+    list.innerHTML = A5_MUSIC_TRACKS.map((track, index) => `
+      <button type="button" class="a5-music-track" data-action="select-music-track" data-music-track="${escapeAttr(track.key)}" role="listitem" aria-pressed="false">
+        <span class="a5-music-track-number">${String(index + 1).padStart(2, '0')}</span>
+        <span class="a5-music-track-copy"><strong>${escapeHTML(track.title)}</strong><small>${escapeHTML(track.artist)}</small></span>
+        <span class="a5-music-track-play" aria-hidden="true">▶</span>
+      </button>`).join('');
+  }
+
+  function openMusicPanel() {
+    const widget = $('#a5MusicWidget');
+    const panel = $('#a5MusicPanel');
+    const toggle = $('#a5MusicToggle');
+    if (!widget || !panel || widget.classList.contains('hidden')) return;
+    panel.classList.remove('hidden');
+    toggle?.setAttribute('aria-expanded', 'true');
+    toggle?.classList.add('is-open');
+  }
+
+  function resetMusicPlayerContent() {
+    const wrap = $('#a5MusicPlayerWrap');
+    if (wrap) wrap.innerHTML = '<div class="a5-music-empty-player"><span aria-hidden="true">🎶</span><strong>Một giai điệu cho ngày đi học</strong><p>Chọn bài ở danh sách bên dưới. Video sẽ phát ngay trong web bằng trình phát YouTube chính thức.</p></div>';
+    const title = $('#a5MusicCurrentTitle');
+    const artist = $('#a5MusicCurrentArtist');
+    const badge = $('#a5MusicPlayingBadge');
+    const external = $('#a5MusicOpenYoutube');
+    if (title) title.textContent = 'Chưa chọn bài hát';
+    if (artist) artist.textContent = 'Nhạc mặc định tắt · chọn một bài để bắt đầu';
+    if (badge) badge.textContent = 'READY';
+    if (external) { external.classList.add('hidden'); external.href = 'https://www.youtube.com/'; }
+    $$('.a5-music-track').forEach(button => { button.classList.remove('is-selected'); button.setAttribute('aria-pressed', 'false'); });
+  }
+
+  function closeMusicPanel(stopPlayback = true) {
+    const panel = $('#a5MusicPanel');
+    const toggle = $('#a5MusicToggle');
+    if (stopPlayback) {
+      activeMusicTrackKey = null;
+      resetMusicPlayerContent();
+    }
+    panel?.classList.add('hidden');
+    toggle?.setAttribute('aria-expanded', 'false');
+    toggle?.classList.remove('is-open');
+  }
+
+  function toggleMusicPanel() {
+    const panel = $('#a5MusicPanel');
+    if (!panel) return;
+    if (panel.classList.contains('hidden')) openMusicPanel();
+    else closeMusicPanel(true);
+  }
+
+  function playMusicTrack(trackKey) {
+    const track = A5_MUSIC_TRACKS.find(item => item.key === trackKey);
+    if (!track) return;
+    const wrap = $('#a5MusicPlayerWrap');
+    if (!wrap) return;
+    activeMusicTrackKey = track.key;
+    openMusicPanel();
+    $$('.a5-music-track').forEach(button => {
+      const selected = button.dataset.musicTrack === track.key;
+      button.classList.toggle('is-selected', selected);
+      button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      const icon = button.querySelector('.a5-music-track-play');
+      if (icon) icon.textContent = selected ? '♫' : '▶';
+    });
+    $('#a5MusicCurrentTitle').textContent = track.title;
+    $('#a5MusicCurrentArtist').textContent = `${track.artist} · phát từ YouTube`;
+    $('#a5MusicPlayingBadge').textContent = 'ĐANG MỞ';
+    const external = $('#a5MusicOpenYoutube');
+    external.href = track.url;
+    external.classList.remove('hidden');
+    const start = track.start ? `&start=${Math.floor(track.start)}` : '';
+    const origin = `&origin=${encodeURIComponent(window.location.origin)}`;
+    const embedUrl = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(track.videoId)}?autoplay=1&controls=1&playsinline=1&rel=0${start}${origin}`;
+    wrap.innerHTML = `<iframe class="a5-music-iframe" src="${escapeAttr(embedUrl)}" title="${escapeAttr(`${track.title} — trình phát YouTube`)}" loading="eager" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture; web-share" allowfullscreen></iframe>`;
+  }
+
   function showAuthScreen() {
+    closeMusicPanel(true);
+    $('#a5MusicWidget')?.classList.add('hidden');
     $('#appShell').classList.add('hidden');
     $('#authScreen').classList.remove('hidden');
     if (!isConfigured() || !window.supabase?.createClient) {
@@ -191,6 +283,8 @@
   function showAppShell() {
     $('#authScreen').classList.add('hidden');
     $('#appShell').classList.remove('hidden');
+    $('#a5MusicWidget')?.classList.remove('hidden');
+    renderMusicTrackList();
   }
 
   async function initialize() {
@@ -1702,6 +1796,7 @@
   }
 
   function bindEvents() {
+    renderMusicTrackList();
     if (window.matchMedia) {
       const bookBreakpoint = window.matchMedia('(max-width: 760px)');
       const handleBookBreakpoint = () => { if (activeTab === 'yearbook' && yearbookOpened) renderYearbook(); };
@@ -1801,7 +1896,10 @@
       const actionButton = event.target.closest('[data-action]');
       if (!actionButton) return;
       const action = actionButton.dataset.action;
-      if (action === 'upload-photo') openUpload('photo');
+      if (action === 'toggle-music-panel') toggleMusicPanel();
+      else if (action === 'close-music-player') closeMusicPanel(true);
+      else if (action === 'select-music-track') playMusicTrack(actionButton.dataset.musicTrack);
+      else if (action === 'upload-photo') openUpload('photo');
       else if (action === 'upload-video') openUpload('video');
       else if (action === 'open-yearbook') { yearbookOpened = true; yearbookSpreadIndex = 0; switchTab('yearbook'); renderYearbook(); }
       else if (action === 'close-yearbook') { yearbookOpened = false; yearbookTurning = false; renderYearbook(); }
@@ -1835,7 +1933,10 @@
       else if (action === 'link-facebook') await linkProvider('facebook');
     });
     document.addEventListener('keydown', event => {
-      if (event.key === 'Escape') closeModals();
+      if (event.key === 'Escape') {
+        closeModals();
+        if (!$('#a5MusicPanel')?.classList.contains('hidden')) closeMusicPanel(true);
+      }
       if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-action="view-profile"][role="button"]')) {
         event.preventDefault(); openPublicProfile(event.target.dataset.userId);
       }
