@@ -3,15 +3,25 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#fff7f3" />
-  <meta name="description" content="Nơi lưu giữ thanh xuân A5 — album ảnh, video và những kỷ niệm cuối cấp của chúng mình." />
-  <title>NƠI LƯU GIỮ THANH XUÂN A5</title>
+  <meta name="theme-color" content="#fff3f6" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Bé Báo 12A5" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="description" content="NHỮNG BÉ BÁO 12A5 — nơi lưu giữ thanh xuân, album ảnh, video và những kỷ niệm của lớp mình." />
+  <meta property="og:title" content="NHỮNG BÉ BÁO 12A5 · A5" />
+  <meta property="og:description" content="Một chút hôm nay, một đời để nhớ." />
+  <meta property="og:type" content="website" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <title>NHỮNG BÉ BÁO 12A5 · Nơi lưu giữ thanh xuân</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Nunito:wght@400;500;600;700;800;900&family=Playfair+Display:wght@600;700&family=Patrick+Hand&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
+  <script src="push-config.js"></script>
   <script defer src="app.js"></script>
 </head>
 <body>
@@ -34,7 +44,7 @@
     </div>
     <div class="auth-panel-wrap">
       <div class="auth-panel">
-        <div class="mini-brand"><div class="brand-mark">A<span>5</span></div><div><strong>Góc lưu bút</strong><small>lớp mình, chuyện mình</small></div></div>
+        <div class="mini-brand"><div class="brand-mark brand-mark-logo">A<span>5</span><i>✿</i></div><div class="brand-wording"><strong>NHỮNG BÉ BÁO 12A5</strong><small>lớp mình, chuyện mình</small></div></div>
         <span class="welcome-tag">✿ CHÀO CẬU, BẠN CŨNG Ở ĐÂY RỒI!</span>
         <h2>Mình cùng giữ<br/>lại thanh xuân nhé.</h2>
         <p class="muted auth-description">Đăng nhập để đăng ảnh, kể chuyện và tìm lại những khoảnh khắc của A5.</p>
@@ -42,6 +52,7 @@
           <button class="social-button google-button" id="googleLogin"><span class="google-g" aria-hidden="true">G</span><span>Tiếp tục với Google</span><span class="button-arrow">↗</span></button>
           <button class="social-button facebook-button" id="facebookLogin"><span class="facebook-f" aria-hidden="true">f</span><span>Tiếp tục với Facebook</span><span class="button-arrow">↗</span></button>
         </div>
+        <button type="button" class="pwa-auth-install" id="authInstallButton" data-action="install-app"><span class="pwa-install-icon">↓</span><span><strong>Cài app A5 lên thiết bị</strong><small>Đặt biểu tượng riêng trên PC và điện thoại</small></span><span class="pwa-install-arrow">↗</span></button>
         <p id="authHint" class="auth-hint">Tài khoản của cậu sẽ có một góc riêng để quản lý bài đăng.</p>
         <div id="setupNotice" class="setup-notice hidden"><span>🛠️</span><div><strong>Chưa kết nối backend</strong><p>Điền URL và anon key của Supabase trong <code>config.js</code>, sau đó chạy file SQL trong thư mục <code>supabase</code>. Xem hướng dẫn trong README.</p></div></div>
         <div class="auth-foot"><span>🔒 Góc kỷ niệm dành cho thành viên</span><span>với thật nhiều thương mến</span></div>
@@ -51,7 +62,7 @@
 
   <div id="appShell" class="app-shell hidden">
     <aside class="sidebar">
-      <a class="brand-lockup" href="#home" data-tab="home"><div class="brand-mark">A<span>5</span></div><div><strong>Góc lưu bút</strong><small>thanh xuân chúng mình</small></div></a>
+      <a class="brand-lockup" href="#home" data-tab="home" aria-label="NHỮNG BÉ BÁO 12A5 — về trang chủ"><div class="brand-mark brand-mark-logo">A<span>5</span><i>✿</i></div><div class="brand-wording"><strong>NHỮNG BÉ BÁO 12A5</strong><small>nơi cất giữ thanh xuân</small></div></a>
       <div class="sidebar-label">KHÔNG GIAN A5</div>
       <nav class="main-nav" aria-label="Điều hướng chính">
         <button class="nav-item active" data-tab="home"><span class="nav-icon">⌂</span><span>Trang chủ</span><span class="nav-spark">✦</span></button>
@@ -68,9 +79,9 @@
 
     <main class="app-main">
       <header class="topbar">
-        <div class="mobile-brand"><div class="brand-mark">A<span>5</span></div><span>Góc lưu bút</span></div>
+        <div class="mobile-brand"><div class="brand-mark brand-mark-logo">A<span>5</span><i>✿</i></div><span>NHỮNG BÉ BÁO 12A5</span></div>
         <div class="breadcrumbs"><span>KHÔNG GIAN A5</span><span class="breadcrumb-dot">·</span><strong id="breadcrumbCurrent">Trang chủ</strong></div>
-        <div class="topbar-actions"><label class="search-box"><span>⌕</span><input id="globalSearch" type="search" placeholder="Tìm khoảnh khắc..." aria-label="Tìm khoảnh khắc"/><kbd>⌘ K</kbd></label><button class="notification-top-button" id="topNotificationButton" data-action="open-notifications" aria-label="Thông báo" title="Thông báo">♧<span id="notificationBadge" class="notification-badge hidden">0</span></button><button class="top-icon-button" id="topUploadButton" aria-label="Đăng kỷ niệm" title="Đăng kỷ niệm">＋</button><button class="top-avatar" id="topAvatarButton" aria-label="Mở hồ sơ"></button></div>
+        <div class="topbar-actions"><label class="search-box"><span>⌕</span><input id="globalSearch" type="search" placeholder="Tìm khoảnh khắc..." aria-label="Tìm khoảnh khắc"/><kbd>⌘ K</kbd></label><button type="button" class="pwa-install-button" id="installAppButton" data-action="install-app" aria-label="Cài app A5" title="Cài app A5"><span aria-hidden="true">↓</span><span class="pwa-install-label">Cài app</span></button><button class="notification-top-button" id="topNotificationButton" data-action="open-notifications" aria-label="Thông báo" title="Thông báo">♧<span id="notificationBadge" class="notification-badge hidden">0</span></button><button class="top-icon-button" id="topUploadButton" aria-label="Đăng kỷ niệm" title="Đăng kỷ niệm">＋</button><button class="top-avatar" id="topAvatarButton" aria-label="Mở hồ sơ"></button></div>
       </header>
 
       <div class="page-content">
@@ -214,7 +225,9 @@
 
   <div class="modal-backdrop hidden media-viewer-backdrop" id="mediaViewerModal" role="dialog" aria-modal="true" aria-labelledby="viewerTitle"><div class="media-viewer-card"><button class="viewer-close" type="button" data-action="close-modal" aria-label="Đóng trình xem">×</button><div id="viewerMediaContent" class="viewer-media-content"></div><div class="viewer-caption-panel"><div><span class="section-overline">A5 MEMORY</span><h2 id="viewerTitle">Một mảnh thanh xuân</h2><p id="viewerCaption"></p><small id="viewerMeta"></small></div><div class="viewer-actions"><button type="button" class="outline-button" id="viewerDownloadButton" data-action="download-media">⬇ Tải về</button><button type="button" class="outline-button" id="viewerCommentsButton" data-action="open-comments">💬 Bình luận</button></div></div></div></div>
 
-  <div class="modal-backdrop hidden" id="notificationsModal" role="dialog" aria-modal="true" aria-labelledby="notificationsTitle"><div class="modal-card notifications-modal-card"><button class="modal-close" data-action="close-modal" aria-label="Đóng">×</button><span class="section-overline">LITTLE NOTICES</span><h2 id="notificationsTitle">Thông báo của tớ 🔔</h2><p class="modal-subtitle">Mỗi lời nhắn mới là một điều nhỏ để vui.</p><div id="notificationsList" class="notifications-list"><div class="comments-empty">Đang tải thông báo...</div></div><div class="notification-modal-footer"><button type="button" class="outline-button" data-action="mark-all-notifications-read">Đánh dấu tất cả đã đọc</button></div></div></div>
+  <div class="modal-backdrop hidden" id="notificationsModal" role="dialog" aria-modal="true" aria-labelledby="notificationsTitle"><div class="modal-card notifications-modal-card"><button class="modal-close" data-action="close-modal" aria-label="Đóng">×</button><span class="section-overline">LITTLE NOTICES</span><h2 id="notificationsTitle">Thông báo của tớ 🔔</h2><p class="modal-subtitle">Mỗi lời nhắn mới là một điều nhỏ để vui.</p><section class="push-settings-card" aria-labelledby="pushSettingsTitle"><div class="push-settings-copy"><span class="push-settings-icon" aria-hidden="true">🔔</span><div><strong id="pushSettingsTitle">Thông báo ngoài website</strong><p id="pushSettingsStatus">Bật để nhận thông báo khi có bạn bình luận hoặc thả cảm xúc, kể cả lúc không mở website.</p></div></div><div class="push-settings-actions"><button type="button" class="outline-button" id="enablePushButton" data-action="enable-push-notifications">Bật thông báo</button><button type="button" class="outline-button hidden" id="disablePushButton" data-action="disable-push-notifications">Tắt thông báo</button><button type="button" class="primary-button hidden" id="testPushButton" data-action="test-push-notification">Gửi thông báo thử</button></div></section><div id="notificationsList" class="notifications-list"><div class="comments-empty">Đang tải thông báo...</div></div><div class="notification-modal-footer"><button type="button" class="outline-button" data-action="mark-all-notifications-read">Đánh dấu tất cả đã đọc</button></div></div></div>
+
+  <div class="modal-backdrop hidden" id="installHelpModal" role="dialog" aria-modal="true" aria-labelledby="installHelpTitle"><div class="modal-card pwa-install-help-card"><button class="modal-close" data-action="close-modal" aria-label="Đóng">×</button><div class="pwa-help-logo"><img src="/icons/icon-192.png" alt="Logo A5" width="58" height="58"/></div><span class="section-overline">NHỮNG BÉ BÁO 12A5</span><h2 id="installHelpTitle">Đưa góc nhỏ A5 về máy nhé ♡</h2><p class="modal-subtitle">Cài website như một ứng dụng để mở nhanh từ màn hình chính hoặc thanh tác vụ.</p><div class="install-platform-help"><article><strong>💻 Máy tính Windows · Chrome/Edge</strong><p>Nhấn nút <b>Cài app</b> nếu trình duyệt hỗ trợ. Nếu không thấy lời nhắc, mở menu <b>⋮</b> và tìm <b>Cài đặt trang web dưới dạng ứng dụng / Install this site as an app</b>.</p></article><article><strong>📱 Android</strong><p>Mở website bằng Chrome, nhấn <b>Cài app</b> hoặc menu <b>⋮ → Cài đặt ứng dụng / Thêm vào màn hình chính</b>.</p></article><article><strong>🍎 iPhone · iPad</strong><p>Mở bằng Safari, nhấn nút <b>Chia sẻ</b> → <b>Thêm vào Màn hình chính</b> → <b>Thêm</b>.</p></article></div><p class="pwa-help-note">🔔 Muốn nhận thông báo khi đã thoát website, hãy cài app trước, rồi mở mục Thông báo và bật quyền thông báo. Trên iPhone/iPad cần thêm vào Màn hình chính và dùng iOS/iPadOS 16.4 trở lên.</p><button type="button" class="primary-button full-width" data-action="close-modal">Đã hiểu, để tớ cài nhé ♡</button></div></div>
 
   <div class="modal-backdrop hidden" id="reportMediaModal" role="dialog" aria-modal="true" aria-labelledby="reportMediaTitle"><div class="modal-card report-modal-card"><button class="modal-close" data-action="close-modal" aria-label="Đóng">×</button><span class="section-overline">HELP KEEP A5 KIND</span><h2 id="reportMediaTitle">Báo cáo nội dung ⚑</h2><p class="modal-subtitle">Báo cáo chỉ gửi cho quản trị viên xem xét, không tự động xóa bài đăng.</p><form id="reportMediaForm"><input id="reportMediaId" type="hidden"/><div class="form-field"><label for="reportReason">Lý do báo cáo</label><select id="reportReason" required><option value="">Chọn lý do</option><option value="bullying">Bắt nạt / làm nhục người khác</option><option value="privacy">Vi phạm quyền riêng tư</option><option value="inappropriate">Nội dung không phù hợp</option><option value="spam">Spam / đăng nhầm</option><option value="other">Lý do khác</option></select></div><div class="form-field"><label for="reportDetails">Mô tả thêm <span>không bắt buộc</span></label><textarea id="reportDetails" rows="3" maxlength="500" placeholder="Mô tả ngắn gọn để quản trị viên xem xét... "></textarea></div><p class="privacy-reminder">Nếu ảnh/video khiến cậu không thoải mái, cậu có thể báo cáo hoặc liên hệ trực tiếp người quản lý website.</p><button type="submit" class="primary-button full-width" id="submitReportButton">Gửi báo cáo an toàn ♡</button></form></div></div>
 

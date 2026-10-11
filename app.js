@@ -77,6 +77,205 @@
   let classOfficerAssignments = [];
   let officersFeatureAvailable = false;
   let isA5SiteAdmin = false;
+  let deferredA5InstallPrompt = null;
+  let a5ServiceWorkerRegistration = null;
+  const A5_PUSH_PUBLIC_KEY = String(window.A5_PUSH_CONFIG?.VAPID_PUBLIC_KEY || '').trim();
+
+  // A5 PWA installation: use the native browser prompt when available, otherwise explain the manual path.
+  window.addEventListener('beforeinstallprompt', event => {
+    event.preventDefault();
+    deferredA5InstallPrompt = event;
+    updateA5InstallButtons();
+  });
+  window.addEventListener('appinstalled', () => {
+    deferredA5InstallPrompt = null;
+    updateA5InstallButtons();
+    if (typeof toast === 'function') toast('Đã đưa app A5 về thiết bị rồi nè ♡', 'success');
+  });
+
+  function isA5Standalone() {
+    return Boolean(window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true);
+  }
+  function updateA5InstallButtons() {
+    const installed = isA5Standalone();
+    ['#installAppButton', '#authInstallButton'].forEach(selector => {
+      const button = $(selector);
+      if (!button) return;
+      button.classList.toggle('is-installed', installed);
+      button.setAttribute('aria-label', installed ? 'A5 đã được cài trên thiết bị' : 'Cài app A5 lên thiết bị');
+      if (selector === '#installAppButton') {
+        const label = $('.pwa-install-label', button);
+        if (label) label.textContent = installed ? 'Đã cài' : 'Cài app';
+        button.title = installed ? 'A5 đã được cài' : 'Cài app A5';
+      }
+    });
+  }
+  async function installA5App() {
+    if (isA5Standalone()) return toast('Cậu đang mở app A5 đã cài rồi nè ♡', 'info');
+    if (deferredA5InstallPrompt) {
+      const promptEvent = deferredA5InstallPrompt;
+      deferredA5InstallPrompt = null;
+      try {
+        await promptEvent.prompt();
+        const result = await promptEvent.userChoice;
+        if (result?.outcome === 'accepted') toast('Đang cài app A5 lên thiết bị của cậu ♡', 'success');
+        updateA5InstallButtons();
+        return;
+      } catch (error) {
+        console.warn('Native PWA install prompt unavailable:', error);
+      }
+    }
+    openModal('installHelpModal');
+  }
+  async function registerA5ServiceWorker() {
+    if (!('serviceWorker' in navigator) || !window.isSecureContext) return null;
+    try {
+      a5ServiceWorkerRegistration = await navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
+      return a5ServiceWorkerRegistration;
+    } catch (error) {
+      console.warn('A5 service worker registration failed:', error);
+      return null;
+    }
+  }
+  function base64UrlToUint8Array(value) {
+    const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+    const raw = atob(padded);
+    return Uint8Array.from(raw, character => character.charCodeAt(0));
+  }
+  function isA5PushSupported() {
+    return Boolean(window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window);
+  }
+  async function getA5CurrentPushSubscription() {
+    if (!isA5PushSupported()) return null;
+    try {
+      const registration = a5ServiceWorkerRegistration || await navigator.serviceWorker.getRegistration('/') || await registerA5ServiceWorker();
+      if (!registration) return null;
+      a5ServiceWorkerRegistration = registration;
+      return await registration.pushManager.getSubscription();
+    } catch (error) {
+      console.warn('Could not read A5 push subscription:', error);
+      return null;
+    }
+  }
+  async function updateA5PushSettingsUi() {
+    const enable = $('#enablePushButton');
+    const disable = $('#disablePushButton');
+    const test = $('#testPushButton');
+    const status = $('#pushSettingsStatus');
+    if (!enable || !disable || !test || !status) return;
+    if (!isA5PushSupported()) {
+      enable.classList.remove('hidden'); disable.classList.add('hidden'); test.classList.add('hidden');
+      enable.disabled = true;
+      status.textContent = 'Trình duyệt này chưa hỗ trợ Web Push trong phiên hiện tại. Hãy thử Chrome/Edge trên PC hoặc cài A5 lên màn hình chính trên iPhone/iPad.';
+      return;
+    }
+    enable.disabled = false;
+    const subscription = await getA5CurrentPushSubscription();
+    const subscribed = Boolean(subscription && Notification.permission === 'granted');
+    enable.classList.toggle('hidden', subscribed);
+    disable.classList.toggle('hidden', !subscribed);
+    test.classList.toggle('hidden', !subscribed);
+    if (Notification.permission === 'denied') {
+      status.textContent = 'Thông báo đang bị chặn trong cài đặt trình duyệt. Hãy cho phép thông báo cho website A5 trong quyền của trang web rồi tải lại.';
+    } else if (subscribed) {
+      status.textContent = 'Thông báo đang bật trên thiết bị này. Khi bạn khác bình luận hoặc thả cảm xúc vào kỷ niệm của cậu, A5 có thể gửi thông báo ngoài website.';
+    } else if (!A5_PUSH_PUBLIC_KEY || /PASTE|REPLACE|YOUR_/i.test(A5_PUSH_PUBLIC_KEY)) {
+      status.textContent = 'Cài app dùng được ngay. Để bật thông báo nền, quản trị viên cần hoàn tất cấu hình Web Push trong thư mục supabase/functions và push-config.js.';
+    } else {
+      status.textContent = 'Bật để nhận lời nhắn mới ngoài website. Trình duyệt sẽ hỏi quyền trước khi đăng ký.';
+    }
+  }
+  async function enableA5PushNotifications() {
+    if (!supabase || !currentUser) return toast('Đăng nhập vào tài khoản A5 trước nhé.', 'info');
+    if (!isA5PushSupported()) {
+      openModal('installHelpModal');
+      return toast('Thiết bị/trình duyệt này chưa sẵn sàng cho thông báo nền.', 'info', 5000);
+    }
+    if (!A5_PUSH_PUBLIC_KEY || /PASTE|REPLACE|YOUR_/i.test(A5_PUSH_PUBLIC_KEY)) {
+      await updateA5PushSettingsUi();
+      return toast('Phần cài app đã sẵn sàng; để bật thông báo nền cần hoàn tất cấu hình VAPID và Edge Function theo hướng dẫn PWA trong ZIP.', 'info', 6500);
+    }
+    if (/iPhone|iPad|iPod/i.test(navigator.userAgent) && !isA5Standalone()) {
+      openModal('installHelpModal');
+      return toast('Trên iPhone/iPad, hãy thêm A5 vào Màn hình chính rồi mở app trước khi bật thông báo.', 'info', 6500);
+    }
+    const button = $('#enablePushButton');
+    if (button) button.disabled = true;
+    try {
+      const registration = a5ServiceWorkerRegistration || await registerA5ServiceWorker();
+      if (!registration) throw new Error('Không đăng ký được service worker. Hãy mở website bằng HTTPS rồi tải lại.');
+      const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+      if (permission !== 'granted') {
+        await updateA5PushSettingsUi();
+        return toast('Cậu chưa cấp quyền thông báo cho A5.', 'info', 5000);
+      }
+      const sub = await registration.pushManager.getSubscription() || await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToUint8Array(A5_PUSH_PUBLIC_KEY) });
+      const raw = sub.toJSON();
+      if (!raw?.keys?.p256dh || !raw?.keys?.auth) throw new Error('Trình duyệt chưa trả về đủ thông tin đăng ký push.');
+      const { error } = await supabase.from('a5_push_subscriptions').upsert({
+        user_id: currentUser.id,
+        endpoint: sub.endpoint,
+        p256dh: raw.keys.p256dh,
+        auth: raw.keys.auth,
+        user_agent: String(navigator.userAgent || '').slice(0, 500),
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id,endpoint' });
+      if (error) throw error;
+      toast('Đã bật đăng ký thông báo trên thiết bị này ♡', 'success', 5000);
+      await updateA5PushSettingsUi();
+    } catch (error) {
+      console.error('Enable A5 push failed:', error);
+      const message = String(error?.message || 'Chưa bật được thông báo.');
+      if (/a5_push_subscriptions|relation|schema cache|does not exist/i.test(message)) {
+        toast('Chưa tạo bảng thông báo nền. Quản trị viên cần chạy supabase/a5-push-subscriptions.sql trước.', 'error', 6500);
+      } else {
+        toast(`Chưa bật được thông báo: ${message.slice(0, 140)}`, 'error', 6500);
+      }
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+  async function disableA5PushNotifications(silent = false) {
+    const subscription = await getA5CurrentPushSubscription();
+    try {
+      if (subscription && supabase && currentUser) {
+        const { error } = await supabase.from('a5_push_subscriptions').delete().eq('user_id', currentUser.id).eq('endpoint', subscription.endpoint);
+        if (error) throw error;
+      }
+      if (subscription) await subscription.unsubscribe();
+      await updateA5PushSettingsUi();
+      if (!silent) toast('Đã tắt thông báo nền trên thiết bị này.', 'success');
+    } catch (error) {
+      console.error('Disable A5 push failed:', error);
+      if (!silent) toast('Chưa tắt được thông báo hoàn toàn. Cậu có thể chặn quyền trong cài đặt trình duyệt.', 'error', 5000);
+    }
+  }
+  async function testA5PushNotification() {
+    if (!supabase || !currentUser) return toast('Đăng nhập vào A5 trước nhé.', 'info');
+    try {
+      const { data, error } = await supabase.functions.invoke('a5-web-push', { body: { action: 'test' } });
+      if (error) throw error;
+      if (!data?.sent) return toast('Chưa gửi được thông báo thử. Kiểm tra Edge Function và khóa VAPID trong hướng dẫn.', 'error', 6500);
+      toast('Đã gửi yêu cầu thông báo thử. Kiểm tra trung tâm thông báo của thiết bị nhé ♡', 'success', 5000);
+    } catch (error) {
+      console.error('A5 test push failed:', error);
+      toast('Chưa gửi được thông báo thử. Có thể Edge Function hoặc secrets chưa được cấu hình.', 'error', 6500);
+    }
+  }
+  async function dispatchA5ActivityPush(mediaId, type) {
+    if (!supabase || !currentUser || !A5_PUSH_PUBLIC_KEY || /PASTE|REPLACE|YOUR_/i.test(A5_PUSH_PUBLIC_KEY)) return;
+    try {
+      const { error } = await supabase.functions.invoke('a5-web-push', { body: { action: 'activity', media_id: mediaId, notification_type: type } });
+      if (error) console.info('A5 background push was not dispatched:', error.message || error);
+    } catch (error) {
+      // Push must never block a normal comment or reaction if push services are not configured.
+      console.info('A5 background push unavailable:', error);
+    }
+  }
+  function clearA5PushOnSignOut() {
+    return disableA5PushNotifications(true);
+  }
 
   function escapeHTML(value) {
     return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -347,6 +546,8 @@
 
   async function initialize() {
     window.setTimeout(() => $('#splash')?.classList.add('done'), 700);
+    registerA5ServiceWorker();
+    updateA5InstallButtons();
     bindEvents();
     if (!isConfigured() || !window.supabase?.createClient) {
       showAuthScreen();
@@ -418,12 +619,14 @@
     await loadData(true);
     await syncLinkedProviders();
     renderAll();
+    updateA5PushSettingsUi();
   }
 
   async function signOut() {
     if (!supabase) return;
     const button = $('#logoutButton');
     if (button) button.disabled = true;
+    await clearA5PushOnSignOut();
     const { error } = await supabase.auth.signOut();
     if (button) button.disabled = false;
     if (error) { console.error(error); toast('Chưa đăng xuất được. Thử lại nhé.', 'error'); return; }
@@ -687,6 +890,7 @@
     await loadNotifications();
     renderNotificationsList();
     openModal('notificationsModal');
+    updateA5PushSettingsUi();
   }
   async function openNotification(notificationId, mediaId, type) {
     const row = notificationItems.find(item => item.id === notificationId);
@@ -2097,6 +2301,7 @@
       $('#commentSubmitButton').textContent = 'Gửi bình luận ♡'; $('#cancelCommentEdit').classList.add('hidden');
       await refreshComments(mediaId);
       toast(editingId ? 'Đã cập nhật lời nhắn ♡' : 'Đã gửi bình luận ♡', 'success');
+      if (!editingId) void dispatchA5ActivityPush(mediaId, 'comment');
     } catch (error) {
       console.error('Save comment failed:', error);
       toast(`Chưa gửi được bình luận: ${(error?.message || 'Hãy kiểm tra migration v2 và quyền truy cập.').slice(0, 120)}`, 'error', 6000);
@@ -2201,6 +2406,7 @@
   async function toggleReaction(mediaId, emoji) {
     if (!currentUser || !supabase) return;
     const found = reactionItems.find(reaction => reaction.media_id === mediaId && reaction.user_id === currentUser.id && reaction.emoji === emoji);
+    const addingReaction = !found;
     try {
       if (found) {
         const { error } = await supabase.from('reactions').delete().eq('id', found.id).eq('user_id', currentUser.id);
@@ -2210,6 +2416,7 @@
         if (error && !String(error.message || '').toLowerCase().includes('duplicate')) throw error;
       }
       await loadReactions(); renderAll();
+      if (addingReaction) void dispatchA5ActivityPush(mediaId, 'reaction');
     } catch (error) { console.error('Reaction error:', error); toast('Chưa gửi được cảm xúc. Cậu thử lại nhé.', 'error'); }
   }
   function openReactions(mediaId, emojiFilter = '') {
@@ -2363,7 +2570,11 @@
       const actionButton = event.target.closest('[data-action]');
       if (!actionButton) return;
       const action = actionButton.dataset.action;
-      if (action === 'toggle-music-panel') toggleMusicPanel();
+      if (action === 'install-app') await installA5App();
+      else if (action === 'enable-push-notifications') await enableA5PushNotifications();
+      else if (action === 'disable-push-notifications') await disableA5PushNotifications(false);
+      else if (action === 'test-push-notification') await testA5PushNotification();
+      else if (action === 'toggle-music-panel') toggleMusicPanel();
       else if (action === 'toggle-music-compact') toggleMusicCompact();
       else if (action === 'close-music-player') closeMusicPanel(true);
       else if (action === 'select-music-track') playMusicTrack(actionButton.dataset.musicTrack);
