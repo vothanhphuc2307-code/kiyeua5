@@ -1335,7 +1335,8 @@
     if (tab === 'yearbook') { renderYearbook(); if (yearbookOpened) void loadYearbookData(); }
     if (tab === 'people') renderPeople();
     if (tab === 'profile') renderProfile();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const reduceMotion = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
   }
   function updateActiveTab() {
     const names = { home: 'Trang chủ', gallery: 'Album kỷ niệm', yearbook: 'Cuốn kỷ yếu', people: 'Thành viên A5', profile: 'Góc của tớ' };

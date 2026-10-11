@@ -611,3 +611,56 @@ button.public-profile-photo:focus-visible,.media-visual-open:focus-visible,.on-t
 .officer-admin-panel button:disabled{opacity:.65;cursor:wait}
 @media(max-width:760px){.officers-panel{padding:13px;border-radius:16px;gap:11px}.officers-panel-heading h2{font-size:17px}.officers-panel-heading p{font-size:9px}.officers-heart{width:36px;height:36px;border-radius:12px;font-size:21px}.officers-roster{grid-template-columns:1fr;gap:7px}.officer-roster-card{padding:10px;border-radius:12px}.officer-role-icon{width:32px;height:32px;border-radius:10px;font-size:16px}.officer-roster-copy small{font-size:8px}.officer-roster-copy strong{font-size:11px}.officer-roster-copy p{font-size:8px}.officer-roster-avatar{width:33px;height:33px;border-radius:11px}.officer-admin-panel{padding:11px}.officer-assignment-row{grid-template-columns:1fr;gap:7px}.officer-role-select{font-size:11px}.officer-admin-footer{align-items:stretch;flex-direction:column}.officer-admin-footer .primary-button{width:100%}.officer-badge{font-size:7px}}
 @media(prefers-reduced-motion:reduce){.officer-roster-card,.officers-panel{animation:none!important;transition:none!important}}
+
+/* A5 MOTION POLISH v1.0 — restrained scrapbook motion, mobile-friendly */
+.page-view{animation:a5PageArrive .34s cubic-bezier(.2,.72,.25,1) both}
+.page-view:not(.active){animation:none}
+@keyframes a5PageArrive{from{opacity:0;transform:translate3d(0,8px,0)}to{opacity:1;transform:translate3d(0,0,0)}}
+
+/* Stagger only the first cards: long galleries remain responsive. */
+.memory-card{animation-duration:.38s;animation-timing-function:cubic-bezier(.2,.72,.25,1);backface-visibility:hidden}
+.media-grid>.memory-card:nth-of-type(n+9),#profileMediaGrid>.memory-card:nth-of-type(n+9){animation:none!important}
+.memory-card,.officer-roster-card,.on-this-day-item,.yearbook-polaroid{transform-origin:center center}
+
+/* A quiet keepsake-paper drift on desktop; no extra elements or libraries. */
+@keyframes a5PolaroidDrift{0%,100%{transform:rotate(5deg) translate3d(0,0,0)}50%{transform:rotate(4.5deg) translate3d(0,-3px,0)}}
+@keyframes a5StickerDrift{0%,100%{transform:rotate(12deg) translate3d(0,0,0)}50%{transform:rotate(10deg) translate3d(0,-2px,0)}}
+@keyframes a5NoteDrift{0%,100%{transform:rotate(-7deg) translate3d(0,0,0)}50%{transform:rotate(-6deg) translate3d(0,-2px,0)}}
+@media(min-width:761px) and (hover:hover) and (pointer:fine){
+  #page-home.active .collage-polaroid{animation:a5PolaroidDrift 8.5s ease-in-out infinite}
+  #page-home.active .sticker-b{animation:a5StickerDrift 7s ease-in-out infinite}
+  #page-home.active .collage-note{animation:a5NoteDrift 7.5s ease-in-out infinite}
+}
+
+/* Shorter, lighter modal transitions and blur. */
+.modal-backdrop,.confirm-backdrop{animation-duration:.16s;backdrop-filter:blur(5px)}
+.modal-card{animation-duration:.24s}
+
+/* Keep hover motion for a mouse; touch devices get stable, responsive targets. */
+@media(hover:none),(pointer:coarse){
+  .memory-card:hover,.officer-roster-card:hover,.on-this-day-item:hover,.yearbook-polaroid:hover,
+  .social-button:hover,.nav-item:hover,.primary-button:hover:not(:disabled),.outline-button:hover:not(:disabled),
+  .subtle-button:hover:not(:disabled),.tiny-action:hover{transform:none}
+  .media-visual-open:hover>img,.media-visual-open:hover>video{transform:none}
+  .media-open-hint{display:none}
+  .memory-card:active,.officer-roster-card:active,.on-this-day-item:active{transform:scale(.995)}
+}
+
+/* Mobile: disable decorative infinite movement and costly background effects. */
+@media(max-width:760px){
+  html{scroll-behavior:auto}
+  .ambient{display:none!important;filter:none!important}
+  .page-view{animation-duration:.28s}
+  .memory-card{animation-duration:.26s}
+  .modal-backdrop,.confirm-backdrop{backdrop-filter:blur(2px);padding:10px}
+  .modal-card{animation-duration:.2s}
+  .wave,.floating-heart,.splash-paper,.splash-flower,.splash-dots i{animation:none!important}
+  #page-home.active .collage-polaroid,#page-home.active .sticker-b,#page-home.active .collage-note{animation:none!important}
+}
+
+/* Honor the visitor's system preference throughout the entire site. */
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto!important}
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+}
+
