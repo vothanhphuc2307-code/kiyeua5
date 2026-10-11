@@ -731,3 +731,77 @@ button.public-profile-photo:focus-visible,.media-visual-open:focus-visible,.on-t
   .media-grid>.memory-card:nth-child(5),#profileMediaGrid>.memory-card:nth-child(5){animation-delay:.11s}
   .media-grid>.memory-card:nth-child(6),#profileMediaGrid>.memory-card:nth-child(6){animation-delay:.135s}
 }
+
+
+/* A5 performance + responsive polish v1.2: preserve the scrapbook visual language. */
+img, video { max-width: 100%; }
+.memory-card, .person-card, .on-this-day-item, .yearbook-polaroid { min-width: 0; }
+.media-visual img, .on-this-day-thumb img, .public-profile-photo img {
+  background: #f8edf1;
+}
+/* Large lists are created only when their section is opened; keep browser-native image decoding asynchronous. */
+.media-grid img, .people-grid img, .yearbook-spread img {
+  image-rendering: auto;
+}
+.modal-card, .media-viewer-card, .comments-list { overscroll-behavior: contain; }
+
+@media (max-width: 1024px) {
+  .topbar { gap: 10px; }
+  .breadcrumbs { min-width: 0; }
+  .breadcrumbs > span:first-child { display: none; }
+  .page-content { min-width: 0; }
+}
+
+@media (max-width: 760px) {
+  /* Backdrop filters are expensive on mobile GPUs; keep a soft translucent header instead. */
+  .topbar {
+    background: rgba(255, 253, 251, .94);
+    -webkit-backdrop-filter: blur(7px);
+    backdrop-filter: blur(7px);
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+  .ambient { filter: none; opacity: .19; }
+  .app-main, .page-content, .page-view { min-width: 0; }
+  .page-content {
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+    overflow-wrap: anywhere;
+  }
+  .media-grid { gap: clamp(8px, 2.2vw, 11px); }
+  .memory-card { min-width: 0; }
+  .media-card-body, .memory-card-footer, .person-card { min-width: 0; }
+  .memory-card-footer { gap: 6px; }
+  .tiny-action { min-width: 30px; min-height: 30px; }
+  .primary-button, .outline-button, .subtle-button, .text-button,
+  .notification-top-button, .top-icon-button, .modal-close {
+    min-height: 40px;
+  }
+  .filter-pill { min-height: 34px; touch-action: manipulation; }
+  .media-visual-open, .yearbook-media-button, .on-this-day-item { touch-action: manipulation; }
+  .modal-backdrop, .confirm-backdrop, .media-viewer-backdrop {
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+  }
+  .modal-card input:not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+  .modal-card select, .modal-card textarea {
+    font-size: 16px;
+  }
+  .search-box input { font-size: 16px; }
+  .yearbook-video-visual { background: linear-gradient(135deg, #d9a8b4, #b3b0d7 52%, #f1cd9e); }
+}
+
+@media (max-width: 420px) {
+  .page-content {
+    padding-left: max(10px, env(safe-area-inset-left));
+    padding-right: max(10px, env(safe-area-inset-right));
+  }
+  .media-grid { gap: 8px; }
+  .media-card-body { padding: 8px; }
+  .tiny-action { min-width: 28px; min-height: 28px; }
+  .topbar { gap: 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient { animation: none !important; }
+}

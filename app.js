@@ -529,7 +529,12 @@
       if (profileResult.error) throw profileResult.error;
       if (mediaResult.error) throw mediaResult.error;
       const rawProfiles = profileResult.data || [];
-      const avatarUrlMap = await resolveSignedUrls(AVATAR_BUCKET, rawProfiles.map(profile => profile.avatar_path));
+      const rawMedia = mediaResult.data || [];
+      // Sign private avatar and media URLs concurrently; neither request depends on the other.
+      const [avatarUrlMap, mediaUrlMap] = await Promise.all([
+        resolveSignedUrls(AVATAR_BUCKET, rawProfiles.map(profile => profile.avatar_path)),
+        resolveSignedUrls(MEDIA_BUCKET, rawMedia.map(item => item.storage_path))
+      ]);
       const profileResolved = rawProfiles.map(profile => ({
         ...profile, avatar_url: profile.avatar_path ? (avatarUrlMap.get(profile.avatar_path) || '') : ''
       }));
@@ -546,19 +551,20 @@
           profiles = [...profiles.filter(p => p.id !== resolved.id), resolved]; currentProfile = resolved;
         }
       }
-      const rawMedia = mediaResult.data || [];
-      const mediaUrlMap = await resolveSignedUrls(MEDIA_BUCKET, rawMedia.map(item => item.storage_path));
       mediaItems = rawMedia.map(item => {
         const owner = profiles.find(profile => profile.id === item.user_id) || null;
         const mediaUrl = mediaUrlMap.get(item.storage_path) || '';
         return { ...item, url: mediaUrl, profiles: owner };
       });
       if (token !== pageLoadToken) return;
-      await loadClassroomSeats();
-      await loadClassOfficerAssignments();
-      await loadReactions();
-      await loadCommentCounts();
-      await loadNotifications();
+      // These queries are independent. Run them together to reduce serial network waits.
+      await Promise.all([
+        loadClassroomSeats(),
+        loadClassOfficerAssignments(),
+        loadReactions(),
+        loadCommentCounts(),
+        loadNotifications()
+      ]);
       renderAll();
       if (!currentProfile) toast('Chưa tải được hồ sơ tài khoản. Hãy kiểm tra lại schema SQL trong Supabase.', 'error', 6000);
       else {
@@ -674,7 +680,7 @@
     container.innerHTML = notificationItems.map(item => {
       const actor = profiles.find(profile => profile.id === item.actor_id) || item.actor || {};
       const verb = item.notification_type === 'comment' ? 'đã để lại bình luận' : 'đã thả cảm xúc vào kỷ niệm';
-      return `<button type="button" class="notification-row ${item.read_at ? '' : 'unread'}" data-action="open-notification" data-notification-id="${escapeAttr(item.id)}" data-media-id="${escapeAttr(item.media_id || '')}" data-notification-type="${escapeAttr(item.notification_type)}"><span class="notification-avatar">${actor.avatar_url ? `<img src="${escapeAttr(actor.avatar_url)}" alt=""/>` : shortInitial(displayName(actor))}</span><span class="notification-copy"><strong>${escapeHTML(displayName(actor))}</strong><span>${verb}</span><small>${escapeHTML(formatDate(item.created_at, true))}</small></span><span class="notification-status">${item.read_at ? 'Đã đọc' : '● Mới'}</span></button>`;
+      return `<button type="button" class="notification-row ${item.read_at ? '' : 'unread'}" data-action="open-notification" data-notification-id="${escapeAttr(item.id)}" data-media-id="${escapeAttr(item.media_id || '')}" data-notification-type="${escapeAttr(item.notification_type)}"><span class="notification-avatar">${actor.avatar_url ? `<img src="${escapeAttr(actor.avatar_url)}" alt="" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(displayName(actor))}</span><span class="notification-copy"><strong>${escapeHTML(displayName(actor))}</strong><span>${verb}</span><small>${escapeHTML(formatDate(item.created_at, true))}</small></span><span class="notification-status">${item.read_at ? 'Đã đọc' : '● Mới'}</span></button>`;
     }).join('');
   }
   async function openNotifications() {
@@ -702,7 +708,7 @@
   function avatarHTML(profile, className = 'avatar') {
     const url = profile?.avatar_url;
     const label = displayName(profile);
-    return `<span class="${className}" title="${escapeAttr(label)}">${url ? `<img src="${escapeAttr(url)}" alt="Ảnh đại diện ${escapeAttr(label)}" loading="lazy"/>` : shortInitial(label)}</span>`;
+    return `<span class="${className}" title="${escapeAttr(label)}">${url ? `<img src="${escapeAttr(url)}" alt="Ảnh đại diện ${escapeAttr(label)}" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(label)}</span>`;
   }
   function userReactionSet(item) {
     const result = new Map();
@@ -804,14 +810,14 @@
     $('#peopleCount').textContent = profiles.length;
     $('#heroPeopleCount').textContent = `${profiles.length} thành viên`;
     $('#heroAvatarStack').innerHTML = profiles.slice(0, 3).map((profile, index) => profile.avatar_url
-      ? `<span style="padding:0;overflow:hidden;background:${tint[index % tint.length]}"><img src="${escapeAttr(profile.avatar_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/></span>`
+      ? `<span style="padding:0;overflow:hidden;background:${tint[index % tint.length]}"><img src="${escapeAttr(profile.avatar_url)}" alt="" loading="lazy" decoding="async" fetchpriority="low" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/></span>`
       : `<span style="background:${tint[index % tint.length]}">${shortInitial(displayName(profile))}</span>`).join('') || '<span>✿</span><span>♡</span><span>☼</span>';
     $('#peopleGrid').innerHTML = people.map((profile, index) => {
       const ownMedia = mediaItems.filter(item => item.user_id === profile.id);
       const bio = profile.bio || 'đang viết tiếp câu chuyện thanh xuân...';
       const dream = profile.dream_job ? `<p class="person-dream-teaser">✨ Mơ ước: ${escapeHTML(profile.dream_job)}</p>` : '';
       const seat = classroomSeats.find(entry => entry.user_id === profile.id);
-      return `<article class="person-card" data-action="view-profile" data-user-id="${escapeAttr(profile.id)}" tabindex="0" role="button" style="--person-tint:${tint[index % tint.length]};animation-delay:${Math.min(index * 30, 240)}ms"><div class="person-avatar">${profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện ${escapeAttr(displayName(profile))}" loading="lazy"/>` : shortInitial(displayName(profile))}</div><h3>${escapeHTML(displayName(profile))}</h3>${officerBadgeHTML(profile.id)}<p class="person-nickname">${escapeHTML(profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5')}</p><p class="person-bio">${escapeHTML(bio)}</p>${dream}${seat ? `<span class="person-seat-tag">🪑 Khu ${escapeHTML(seat.row_code)} · Bàn ${String(seat.desk_number).padStart(2, '0')} · Chỗ ${seat.seat_number}</span>` : ''}<div class="person-statline"><span>▧ <b>${ownMedia.filter(item => item.media_type === 'photo').length}</b> ảnh</span><span>▷ <b>${ownMedia.filter(item => item.media_type === 'video').length}</b> video</span></div><span class="person-view-button">Ghé thăm góc nhỏ ↗</span></article>`;
+      return `<article class="person-card" data-action="view-profile" data-user-id="${escapeAttr(profile.id)}" tabindex="0" role="button" style="--person-tint:${tint[index % tint.length]};animation-delay:${Math.min(index * 30, 240)}ms"><div class="person-avatar">${profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện ${escapeAttr(displayName(profile))}" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(displayName(profile))}</div><h3>${escapeHTML(displayName(profile))}</h3>${officerBadgeHTML(profile.id)}<p class="person-nickname">${escapeHTML(profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5')}</p><p class="person-bio">${escapeHTML(bio)}</p>${dream}${seat ? `<span class="person-seat-tag">🪑 Khu ${escapeHTML(seat.row_code)} · Bàn ${String(seat.desk_number).padStart(2, '0')} · Chỗ ${seat.seat_number}</span>` : ''}<div class="person-statline"><span>▧ <b>${ownMedia.filter(item => item.media_type === 'photo').length}</b> ảnh</span><span>▷ <b>${ownMedia.filter(item => item.media_type === 'video').length}</b> video</span></div><span class="person-view-button">Ghé thăm góc nhỏ ↗</span></article>`;
     }).join('');
     $('#peopleEmpty').classList.toggle('hidden', people.length !== 0);
     $('#peopleGrid').classList.toggle('hidden', people.length === 0);
@@ -892,7 +898,7 @@
       const profile = assignment?.user_id ? profiles.find(person => person.id === assignment.user_id) : null;
       const memberName = profile ? displayName(profile) : 'Chưa phân công';
       const avatar = profile?.avatar_url
-        ? `<img src="${escapeAttr(profile.avatar_url)}" alt="" loading="lazy"/>`
+        ? `<img src="${escapeAttr(profile.avatar_url)}" alt="" loading="lazy" decoding="async" fetchpriority="low"/>`
         : `<span>${profile ? shortInitial(memberName) : '♡'}</span>`;
       return `<article class="officer-roster-card"><span class="officer-role-icon" aria-hidden="true">${role.icon}</span><div class="officer-roster-copy"><small>${escapeHTML(role.label)}</small><strong>${escapeHTML(memberName)}</strong><p>${escapeHTML(role.note)}</p></div><div class="officer-roster-avatar${profile ? '' : ' is-empty'}">${avatar}</div></article>`;
     }).join('');
@@ -972,7 +978,7 @@
       : (occupied ? 'view-profile' : (own ? 'current-seat' : 'choose-seat'));
     const name = profile ? displayName(profile) : (own ? 'Chỗ của cậu' : 'Còn trống');
     const avatar = profile?.avatar_url
-      ? `<img src="${escapeAttr(profile.avatar_url)}" alt="" loading="lazy"/>`
+      ? `<img src="${escapeAttr(profile.avatar_url)}" alt="" loading="lazy" decoding="async" fetchpriority="low"/>`
       : (profile ? shortInitial(name) : (own ? '♡' : '+'));
     const seatClass = `classroom-seat ${occupied ? 'is-occupied' : ''} ${own ? 'is-own-seat' : ''} ${!seat.user_id ? 'is-empty-seat' : ''} ${context === 'picker' ? 'seat-picker-choice' : ''}`;
     const label = `Khu ${seat.row_code}, bàn ${seat.desk_number}, chỗ ${seat.seat_number}: ${name}`;
@@ -1126,9 +1132,9 @@
     const profile = currentProfile;
     const name = displayName(profile);
     $('#sidebarUser').innerHTML = `${avatarHTML(profile)}<div class="sidebar-user-info"><strong>${escapeHTML(name)}</strong><small>${escapeHTML(profile.nickname || 'Thành viên A5')}</small></div>`;
-    $('#topAvatarButton').innerHTML = profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện"/>` : shortInitial(name);
+    $('#topAvatarButton').innerHTML = profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(name);
     $('#helloName').textContent = profile.nickname || name.split(/\s+/)[0] || 'người bạn A5';
-    $('#profileLargeAvatar').innerHTML = profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện"/>` : shortInitial(name);
+    $('#profileLargeAvatar').innerHTML = profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(name);
     $('#profileDisplayName').textContent = name;
     $('#profileNickname').textContent = profile.nickname ? `“${profile.nickname}”` : 'chưa có biệt danh';
     $('#profileBio').textContent = profile.bio || 'Mỗi ngày đi học là một trang trong cuốn lưu bút.';
@@ -1189,9 +1195,9 @@
       const event = String(item.album_name || '').trim() || 'Những ngày bình thường';
       const caption = String(item.caption || '').trim() || 'Một khoảnh khắc nhỏ, để sau này còn nhớ ♡';
       const visual = item.media_type === 'video' && item.url
-        ? `<div class="yearbook-video-visual"><video src="${escapeAttr(item.url)}" muted playsinline preload="metadata" tabindex="-1" aria-hidden="true"></video><span class="yearbook-video-play">▶</span><span class="yearbook-video-label">VIDEO KỶ NIỆM</span></div>`
+        ? `<div class="yearbook-video-visual"><video src="${escapeAttr(item.url)}" muted playsinline preload="none" tabindex="-1" aria-hidden="true"></video><span class="yearbook-video-play">▶</span><span class="yearbook-video-label">VIDEO KỶ NIỆM</span></div>`
         : item.media_type !== 'video' && item.url
-          ? `<img src="${escapeAttr(item.url)}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}" loading="lazy"/>`
+          ? `<img src="${escapeAttr(item.url)}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}" loading="lazy" decoding="async" fetchpriority="low"/>`
           : `<span class="yearbook-missing-visual">${item.media_type === 'video' ? '🎞️' : '📷'}<small>Không tải được bản xem trước</small></span>`;
       return `<article class="yearbook-polaroid" style="--tilt:${tilt}deg;--paper-accent:${accent}"><span class="yearbook-tape" aria-hidden="true"></span><button type="button" class="yearbook-media-button" data-action="yearbook-view-media" data-media-id="${escapeAttr(item.id)}" aria-label="Mở ${item.media_type === 'video' ? 'video' : 'ảnh'}: ${escapeAttr(caption)}">${visual}<span class="yearbook-zoom-hint" aria-hidden="true">↗</span></button><div class="yearbook-polaroid-copy"><span class="yearbook-date-note">${escapeHTML(date)}</span><strong class="yearbook-event-note">${escapeHTML(event)}</strong><p>${escapeHTML(caption)}</p><small class="yearbook-signed">— ${escapeHTML(displayName(owner))}</small></div></article>`;
     }).join('') : `<div class="yearbook-page-empty"><span>✿</span><strong>Chỗ này còn để trống nè</strong><p>Khi A5 đăng thêm kỷ niệm, những tấm ảnh mới sẽ được dán vào đây.</p></div>`;
@@ -1324,7 +1330,16 @@
 
   function renderAll() {
     populateMonthFilters();
-    renderProfile(); renderHomeMedia(); renderGallery(); renderPeople(); renderOnThisDay(); renderNotificationBadge(); renderYearbook(); updateActiveTab();
+    // The home view is the first screen. Avoid building up to 200 gallery cards and
+    // every member card before the user opens those sections; switchTab renders them on demand.
+    renderProfile();
+    renderHomeMedia();
+    if (activeTab === 'gallery') renderGallery();
+    if (activeTab === 'people') renderPeople();
+    renderOnThisDay();
+    renderNotificationBadge();
+    renderYearbook();
+    updateActiveTab();
     if (activeTab === 'yearbook' && yearbookOpened && !Array.isArray(yearbookMediaCache) && !yearbookLoading) void loadYearbookData();
   }
   function switchTab(tab) {
@@ -2127,7 +2142,7 @@
     const content = $('#viewerMediaContent');
     content.innerHTML = item.media_type === 'video'
       ? `<video src="${escapeAttr(item.url)}" controls autoplay playsinline preload="metadata" aria-label="Video kỷ niệm"></video>`
-      : `<img src="${escapeAttr(item.url)}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}"/>`;
+      : `<img src="${escapeAttr(item.url)}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}" decoding="async" fetchpriority="high"/>`;
     $('#viewerTitle').textContent = item.album_name || (item.media_type === 'video' ? 'Một đoạn video của A5' : 'Một mảnh thanh xuân');
     $('#viewerCaption').textContent = item.caption || 'Một khoảnh khắc được lưu lại ♡';
     $('#viewerMeta').textContent = `${displayName(owner)} · ${formatDate(item.created_at, true)}${item.album_name ? ` · Album: ${item.album_name}` : ''}`;
@@ -2213,7 +2228,7 @@
     const profile = profiles.find(person => person.id === id);
     if (!profile) return toast('Chưa tìm được hồ sơ của bạn ấy.', 'error');
     const own = mediaItems.filter(item => item.user_id === id);
-    $('#publicProfileAvatar').innerHTML = profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện"/>` : shortInitial(displayName(profile));
+    $('#publicProfileAvatar').innerHTML = profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(displayName(profile));
     $('#publicProfileCover').style.background = `linear-gradient(115deg, ${safeColor(profile.profile_color || '#f6dce5')}, #fff0de 70%, #ece5ff)`;
     $('#publicProfileName').textContent = displayName(profile);
     $('#publicProfileNickname').textContent = profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5';
