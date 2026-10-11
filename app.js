@@ -69,6 +69,11 @@
   let trimDuration = 0;
   let isTrimming = false;
   let activeMusicTrackKey = null;
+  let classroomSeats = [];
+  let classroomFeatureAvailable = false;
+  let peopleMode = 'classroom';
+  let seatPromptShownForUserId = null;
+  let seatSaving = false;
 
   function escapeHTML(value) {
     return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -357,7 +362,7 @@
         // Defer application calls so the auth callback cannot hold the auth lock.
         window.setTimeout(() => {
           if (event === 'SIGNED_OUT') {
-            currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; lastUserId = null;
+            currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; classroomSeats = []; classroomFeatureAvailable = false; seatPromptShownForUserId = null; lastUserId = null;
             yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookOpened = false; yearbookSpreadIndex = 0;
             showAuthScreen();
           } else if (session?.user) {
@@ -419,7 +424,7 @@
     const { error } = await supabase.auth.signOut();
     if (button) button.disabled = false;
     if (error) { console.error(error); toast('Chưa đăng xuất được. Thử lại nhé.', 'error'); return; }
-    currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; lastUserId = null;
+    currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; classroomSeats = []; classroomFeatureAvailable = false; seatPromptShownForUserId = null; lastUserId = null;
     yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookOpened = false; yearbookSpreadIndex = 0;
     signedUrlCache.clear(); showAuthScreen(); toast('Hẹn gặp cậu ở cuốn lưu bút nhé ♡', 'success');
   }
@@ -452,8 +457,8 @@
     }
     try {
       const [profileResult, mediaResult] = await Promise.all([
-        supabase.from('profiles').select('id,display_name,nickname,bio,avatar_path,profile_color,linked_providers,created_at,updated_at').order('created_at', { ascending: true }),
-        supabase.from('media_items').select('id,user_id,media_type,storage_path,caption,note_color,note_font,album_name,created_at,updated_at,profiles(id,display_name,nickname,bio,avatar_path,profile_color,linked_providers,created_at)').order('created_at', { ascending: false }).limit(200)
+        supabase.from('profiles').select('id,display_name,nickname,bio,dream_job,hobbies,future_wishes,avatar_path,profile_color,linked_providers,created_at,updated_at').order('created_at', { ascending: true }),
+        supabase.from('media_items').select('id,user_id,media_type,storage_path,caption,note_color,note_font,album_name,created_at,updated_at,profiles(id,display_name,nickname,bio,dream_job,hobbies,future_wishes,avatar_path,profile_color,linked_providers,created_at)').order('created_at', { ascending: false }).limit(200)
       ]);
       if (profileResult.error) throw profileResult.error;
       if (mediaResult.error) throw mediaResult.error;
@@ -467,7 +472,7 @@
       if (!currentProfile) {
         // A profile trigger should create this row; reload once in case the auth trigger was still running.
         await ensureOwnProfile();
-        const retry = await supabase.from('profiles').select('id,display_name,nickname,bio,avatar_path,profile_color,linked_providers,created_at,updated_at').eq('id', currentUser.id).maybeSingle();
+        const retry = await supabase.from('profiles').select('id,display_name,nickname,bio,dream_job,hobbies,future_wishes,avatar_path,profile_color,linked_providers,created_at,updated_at').eq('id', currentUser.id).maybeSingle();
         if (retry.data) {
           const resolved = { ...retry.data, avatar_url: await resolveSignedUrl(AVATAR_BUCKET, retry.data.avatar_path) };
           profiles = [...profiles.filter(p => p.id !== resolved.id), resolved]; currentProfile = resolved;
@@ -480,11 +485,13 @@
         return { ...item, url: mediaUrl, profiles: owner };
       }));
       if (token !== pageLoadToken) return;
+      await loadClassroomSeats();
       await loadReactions();
       await loadCommentCounts();
       await loadNotifications();
       renderAll();
       if (!currentProfile) toast('Chưa tải được hồ sơ tài khoản. Hãy kiểm tra lại schema SQL trong Supabase.', 'error', 6000);
+      else maybePromptSeatSelection();
     } catch (error) {
       console.error('loadData failed:', error);
       const message = error?.message || 'Không rõ nguyên nhân';
@@ -519,7 +526,7 @@
     const existing = [...(currentProfile.linked_providers || [])].sort().join(',');
     const incoming = [...providers].sort().join(',');
     if (existing === incoming) return;
-    const { data, error } = await supabase.from('profiles').update({ linked_providers: providers }).eq('id', currentUser.id).select('id,display_name,nickname,bio,avatar_path,profile_color,linked_providers,created_at,updated_at').maybeSingle();
+    const { data, error } = await supabase.from('profiles').update({ linked_providers: providers }).eq('id', currentUser.id).select('id,display_name,nickname,bio,dream_job,hobbies,future_wishes,avatar_path,profile_color,linked_providers,created_at,updated_at').maybeSingle();
     if (error) { console.warn('Could not sync linked providers:', error.message); return; }
     if (data) {
       currentProfile = { ...currentProfile, ...data };
@@ -717,7 +724,8 @@
     const query = searchTerm;
     const people = profiles.filter(profile => {
       if (!query) return true;
-      return [displayName(profile), profile.nickname, profile.bio].join(' ').toLocaleLowerCase('vi').includes(query);
+      return [displayName(profile), profile.nickname, profile.bio, profile.dream_job, profile.hobbies, profile.future_wishes]
+        .join(' ').toLocaleLowerCase('vi').includes(query);
     });
     const tint = ['#fde9ed', '#eee8ff', '#fff2d4', '#e5f3e8', '#fce9e0'];
     $('#peopleCount').textContent = profiles.length;
@@ -728,11 +736,153 @@
     $('#peopleGrid').innerHTML = people.map((profile, index) => {
       const ownMedia = mediaItems.filter(item => item.user_id === profile.id);
       const bio = profile.bio || 'đang viết tiếp câu chuyện thanh xuân...';
-      return `<article class="person-card" data-action="view-profile" data-user-id="${escapeAttr(profile.id)}" tabindex="0" role="button" style="--person-tint:${tint[index % tint.length]};animation-delay:${Math.min(index * 30, 240)}ms"><div class="person-avatar">${profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện ${escapeAttr(displayName(profile))}" loading="lazy"/>` : shortInitial(displayName(profile))}</div><h3>${escapeHTML(displayName(profile))}</h3><p class="person-nickname">${escapeHTML(profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5')}</p><p class="person-bio">${escapeHTML(bio)}</p><div class="person-statline"><span>▧ <b>${ownMedia.filter(item => item.media_type === 'photo').length}</b> ảnh</span><span>▷ <b>${ownMedia.filter(item => item.media_type === 'video').length}</b> video</span></div><span class="person-view-button">Ghé thăm góc nhỏ ↗</span></article>`;
+      const dream = profile.dream_job ? `<p class="person-dream-teaser">✨ Mơ ước: ${escapeHTML(profile.dream_job)}</p>` : '';
+      const seat = classroomSeats.find(entry => entry.user_id === profile.id);
+      return `<article class="person-card" data-action="view-profile" data-user-id="${escapeAttr(profile.id)}" tabindex="0" role="button" style="--person-tint:${tint[index % tint.length]};animation-delay:${Math.min(index * 30, 240)}ms"><div class="person-avatar">${profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện ${escapeAttr(displayName(profile))}" loading="lazy"/>` : shortInitial(displayName(profile))}</div><h3>${escapeHTML(displayName(profile))}</h3><p class="person-nickname">${escapeHTML(profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5')}</p><p class="person-bio">${escapeHTML(bio)}</p>${dream}${seat ? `<span class="person-seat-tag">🪑 Dãy ${escapeHTML(seat.row_code)} · Bàn ${String(seat.desk_number).padStart(2, '0')} · Chỗ ${seat.seat_number}</span>` : ''}<div class="person-statline"><span>▧ <b>${ownMedia.filter(item => item.media_type === 'photo').length}</b> ảnh</span><span>▷ <b>${ownMedia.filter(item => item.media_type === 'video').length}</b> video</span></div><span class="person-view-button">Ghé thăm góc nhỏ ↗</span></article>`;
     }).join('');
     $('#peopleEmpty').classList.toggle('hidden', people.length !== 0);
     $('#peopleGrid').classList.toggle('hidden', people.length === 0);
+    $('#classroomPanel')?.classList.toggle('hidden', peopleMode !== 'classroom');
+    $('#peopleDirectoryPanel')?.classList.toggle('hidden', peopleMode !== 'directory');
+    $$('[data-action="switch-people-mode"]').forEach(button => {
+      const active = button.dataset.mode === peopleMode;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+    });
+    renderClassroom();
   }
+
+  async function loadClassroomSeats() {
+    classroomFeatureAvailable = false;
+    classroomSeats = [];
+    if (!supabase || !currentUser) return;
+    try {
+      const { data, error } = await supabase.from('classroom_seats')
+        .select('seat_code,row_code,desk_number,seat_number,user_id,assigned_at')
+        .order('row_code', { ascending: true }).order('desk_number', { ascending: true }).order('seat_number', { ascending: true });
+      if (error) throw error;
+      classroomSeats = data || [];
+      classroomFeatureAvailable = classroomSeats.length > 0;
+    } catch (error) {
+      classroomSeats = [];
+      classroomFeatureAvailable = false;
+      console.warn('Classroom seats are not configured yet. Run the V3.4 migration when ready:', error?.message || error);
+    }
+  }
+
+  function currentClassroomSeat() {
+    return classroomSeats.find(seat => seat.user_id === currentUser?.id) || null;
+  }
+
+  function classroomSeatMarkup(seat, context = 'room') {
+    const profile = seat.user_id ? profiles.find(person => person.id === seat.user_id) : null;
+    const own = seat.user_id && seat.user_id === currentUser?.id;
+    const occupied = Boolean(seat.user_id && !own);
+    const action = context === 'picker'
+      ? (occupied ? '' : (own ? 'current-seat' : 'choose-seat'))
+      : (occupied ? 'view-profile' : (own ? 'current-seat' : 'choose-seat'));
+    const name = profile ? displayName(profile) : (own ? 'Chỗ của cậu' : 'Còn trống');
+    const avatar = profile?.avatar_url
+      ? `<img src="${escapeAttr(profile.avatar_url)}" alt="" loading="lazy"/>`
+      : (profile ? shortInitial(name) : (own ? '♡' : '+'));
+    const seatClass = `classroom-seat ${occupied ? 'is-occupied' : ''} ${own ? 'is-own-seat' : ''} ${!seat.user_id ? 'is-empty-seat' : ''} ${context === 'picker' ? 'seat-picker-choice' : ''}`;
+    const label = `Dãy ${seat.row_code}, bàn ${seat.desk_number}, chỗ ${seat.seat_number}: ${name}`;
+    const disabled = context === 'picker' && occupied ? 'disabled' : '';
+    const userData = occupied ? `data-user-id="${escapeAttr(seat.user_id)}"` : '';
+    const seatData = action === 'choose-seat' || action === 'current-seat' ? `data-seat-code="${escapeAttr(seat.seat_code)}"` : '';
+    return `<button type="button" class="${seatClass}" data-action="${action || 'seat-occupied'}" ${seatData} ${userData} ${disabled} aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}"><span class="classroom-seat-avatar">${avatar}</span><span class="classroom-seat-name">${escapeHTML(name)}</span><small>Chỗ ${seat.seat_number}</small></button>`;
+  }
+
+  function classroomDeskMarkup(rowCode, deskNumber, context = 'room') {
+    const seats = [1, 2, 3, 4].map(number => classroomSeats.find(seat => seat.row_code === rowCode && seat.desk_number === deskNumber && seat.seat_number === number)).filter(Boolean);
+    const byNumber = number => seats.find(seat => seat.seat_number === number);
+    return `<article class="classroom-desk"><div class="classroom-seat-pair">${byNumber(1) ? classroomSeatMarkup(byNumber(1), context) : ''}${byNumber(2) ? classroomSeatMarkup(byNumber(2), context) : ''}</div><div class="classroom-desk-surface"><span>✿ BÀN ${String(deskNumber).padStart(2, '0')}</span><i aria-hidden="true"></i></div><div class="classroom-seat-pair">${byNumber(3) ? classroomSeatMarkup(byNumber(3), context) : ''}${byNumber(4) ? classroomSeatMarkup(byNumber(4), context) : ''}</div></article>`;
+  }
+
+  function renderClassroom() {
+    const target = $('#classroomRows');
+    if (!target) return;
+    if (!classroomFeatureAvailable) {
+      target.innerHTML = `<div class="classroom-not-ready"><span>🛠️</span><div><strong>Sơ đồ lớp đang chờ được mở</strong><p>Cần chạy file <code>supabase/upgrade-v3.4-dream-classroom.sql</code> một lần trong Supabase SQL Editor. Việc này bổ sung các trường ước mơ và 56 chỗ ngồi; không xóa bài đăng cũ.</p></div></div>`;
+      $('#classroomSeatCount').textContent = '—/56';
+      return;
+    }
+    const occupiedCount = classroomSeats.filter(seat => seat.user_id).length;
+    $('#classroomSeatCount').textContent = `${occupiedCount}/56`;
+    const own = currentClassroomSeat();
+    const bottomNote = $('.classroom-bottom-note p');
+    if (bottomNote) bottomNote.textContent = own
+      ? `Cậu đang ngồi ở Dãy ${own.row_code} · Bàn ${String(own.desk_number).padStart(2, '0')} · Chỗ ${own.seat_number}. Muốn đổi chỗ thì bấm nút bên cạnh nhé ♡`
+      : 'Chọn một chỗ còn trống để đặt chỗ của mình. Cậu có thể đổi chỗ sau này ♡';
+    target.innerHTML = ['A', 'B'].map(rowCode => {
+      const rowSeats = classroomSeats.filter(seat => seat.row_code === rowCode);
+      const deskNumbers = [...new Set(rowSeats.map(seat => seat.desk_number))].sort((a, b) => a - b);
+      return `<section class="classroom-aisle"><div class="classroom-aisle-heading"><span class="aisle-letter">${rowCode}</span><div><strong>Dãy ${rowCode}</strong><small>7 bàn · 4 chỗ mỗi bàn</small></div></div><div class="classroom-desk-grid">${deskNumbers.map(deskNumber => classroomDeskMarkup(rowCode, deskNumber, 'room')).join('')}</div></section>`;
+    }).join('');
+  }
+
+  function renderSeatPicker() {
+    const target = $('#seatPickerRows');
+    if (!target) return;
+    if (!classroomFeatureAvailable) {
+      target.innerHTML = '<div class="classroom-not-ready"><strong>Chưa tải được sơ đồ lớp.</strong><p>Hãy thử tải lại trang hoặc liên hệ người quản lý website.</p></div>';
+      return;
+    }
+    target.innerHTML = ['A', 'B'].map(rowCode => {
+      const deskNumbers = [...new Set(classroomSeats.filter(seat => seat.row_code === rowCode).map(seat => seat.desk_number))].sort((a, b) => a - b);
+      return `<section class="seat-picker-aisle"><h3>Dãy ${rowCode}</h3><div class="seat-picker-desk-grid">${deskNumbers.map(deskNumber => classroomDeskMarkup(rowCode, deskNumber, 'picker')).join('')}</div></section>`;
+    }).join('');
+    const own = currentClassroomSeat();
+    const description = $('#seatSelectionDescription');
+    if (description) description.textContent = own
+      ? `Cậu đang ở Dãy ${own.row_code}, bàn ${own.desk_number}, chỗ ${own.seat_number}. Chọn chỗ trống khác nếu muốn đổi chỗ. Chỗ đã có bạn sẽ bị khóa.`
+      : 'Chọn một chỗ còn trống trong phòng học. Mỗi chỗ chỉ dành cho một tài khoản; cậu có thể đổi chỗ sau này.';
+  }
+
+  function openSeatSelection() {
+    if (!classroomFeatureAvailable) return toast('Sơ đồ phòng học chưa được thiết lập. Hãy cập nhật database V3.4 trước nhé.', 'info', 5000);
+    renderSeatPicker();
+    openModal('seatSelectionModal');
+  }
+
+  function maybePromptSeatSelection() {
+    if (!classroomFeatureAvailable || !currentUser || currentClassroomSeat() || seatPromptShownForUserId === currentUser.id) return;
+    seatPromptShownForUserId = currentUser.id;
+    window.setTimeout(() => {
+      if (currentUser && !currentClassroomSeat() && !$('#appShell').classList.contains('hidden')) openSeatSelection();
+    }, 650);
+  }
+
+  function switchPeopleMode(mode) {
+    peopleMode = mode === 'directory' ? 'directory' : 'classroom';
+    renderPeople();
+  }
+
+  async function chooseClassroomSeat(seatCode) {
+    if (!supabase || !currentUser || !classroomFeatureAvailable || seatSaving) return;
+    const seat = classroomSeats.find(item => item.seat_code === seatCode);
+    if (!seat) return toast('Không tìm thấy chỗ ngồi đó.', 'error');
+    if (seat.user_id && seat.user_id !== currentUser.id) return toast('Chỗ này đã có bạn chọn rồi. Cậu chọn chỗ trống khác nhé.', 'info');
+    const previous = currentClassroomSeat();
+    if (previous?.seat_code === seatCode) { closeModals(); return toast('Đây đang là chỗ ngồi của cậu rồi ♡', 'info'); }
+    if (previous && !window.confirm(`Cậu đang ngồi Dãy ${previous.row_code}, bàn ${previous.desk_number}, chỗ ${previous.seat_number}. Chuyển sang chỗ mới nhé?`)) return;
+    seatSaving = true;
+    try {
+      const { error } = await supabase.rpc('choose_classroom_seat', { p_seat_code: seatCode });
+      if (error) throw error;
+      await loadClassroomSeats();
+      renderPeople();
+      closeModals();
+      toast('Đã giữ chỗ cho cậu trong phòng học A5 ♡', 'success', 4200);
+    } catch (error) {
+      console.error('Could not select classroom seat:', error);
+      const message = String(error?.message || 'Không rõ nguyên nhân');
+      if (/occupied|chosen|đã có bạn|chỗ ngồi/i.test(message)) toast('Có bạn vừa chọn chỗ đó mất rồi. Cậu thử chọn chỗ trống khác nhé.', 'info', 5000);
+      else toast(`Chưa giữ được chỗ ngồi: ${message.slice(0, 110)}`, 'error', 6000);
+      await loadClassroomSeats(); renderPeople(); renderSeatPicker();
+    } finally { seatSaving = false; }
+  }
+
   function renderProfile() {
     if (!currentProfile || !currentUser) return;
     const profile = currentProfile;
@@ -744,6 +894,9 @@
     $('#profileDisplayName').textContent = name;
     $('#profileNickname').textContent = profile.nickname ? `“${profile.nickname}”` : 'chưa có biệt danh';
     $('#profileBio').textContent = profile.bio || 'Mỗi ngày đi học là một trang trong cuốn lưu bút.';
+    $('#myDreamJob').textContent = profile.dream_job || 'Chưa chia sẻ';
+    $('#myDreamHobbies').textContent = profile.hobbies || 'Chưa chia sẻ';
+    $('#myDreamWishes').textContent = profile.future_wishes || 'Chưa chia sẻ';
     $('#profileBanner').style.background = `linear-gradient(112deg, ${safeColor(profile.profile_color || '#f6dce5')}, #fff0e3 68%, #f0e9ff)`;
     $('#myEmail').textContent = currentUser.email || 'Email không được cung cấp';
     const providers = new Set(profile.linked_providers || linkedProviders(currentUser));
@@ -1390,7 +1543,7 @@
       const zip = new JSZip();
       const manifest = {
         format: 'a5-personal-backup', version: 1, created_at: new Date().toISOString(),
-        profile: { display_name: currentProfile?.display_name || '', nickname: currentProfile?.nickname || '', bio: currentProfile?.bio || '', profile_color: safeColor(currentProfile?.profile_color) },
+        profile: { display_name: currentProfile?.display_name || '', nickname: currentProfile?.nickname || '', bio: currentProfile?.bio || '', dream_job: currentProfile?.dream_job || '', hobbies: currentProfile?.hobbies || '', future_wishes: currentProfile?.future_wishes || '', profile_color: safeColor(currentProfile?.profile_color) },
         avatar_archive_path: null, media: []
       };
       const backupFolder = zip.folder('media');
@@ -1484,7 +1637,7 @@
         if (status) status.textContent = `Đã khôi phục ${restored}/${manifest.media.length} bài…`;
       }
       if (manifest.profile && currentProfile) {
-        const patch = { display_name: String(manifest.profile.display_name || currentProfile.display_name).slice(0, 40), nickname: String(manifest.profile.nickname || '').slice(0, 32), bio: String(manifest.profile.bio || '').slice(0, 180), profile_color: safeColor(manifest.profile.profile_color) };
+        const patch = { display_name: String(manifest.profile.display_name || currentProfile.display_name).slice(0, 40), nickname: String(manifest.profile.nickname || '').slice(0, 32), bio: String(manifest.profile.bio || '').slice(0, 180), dream_job: String(manifest.profile.dream_job || '').slice(0, 100), hobbies: String(manifest.profile.hobbies || '').slice(0, 160), future_wishes: String(manifest.profile.future_wishes || '').slice(0, 200), profile_color: safeColor(manifest.profile.profile_color) };
         if (manifest.avatar_archive_path && zip.file(manifest.avatar_archive_path)) {
           try {
             const avatarBlob = await zip.file(manifest.avatar_archive_path).async('blob');
@@ -1518,6 +1671,9 @@
     $('#displayNameInput').value = currentProfile.display_name || '';
     $('#nicknameInput').value = currentProfile.nickname || '';
     $('#bioInput').value = currentProfile.bio || '';
+    $('#dreamJobInput').value = currentProfile.dream_job || '';
+    $('#dreamHobbiesInput').value = currentProfile.hobbies || '';
+    $('#futureWishesInput').value = currentProfile.future_wishes || '';
     $('#profileColorInput').value = safeColor(currentProfile.profile_color || '#f6dce5');
     $('#avatarFile').value = '';
     $('#editAvatarPreview').innerHTML = currentProfile.avatar_url ? `<img src="${escapeAttr(currentProfile.avatar_url)}" alt="Ảnh đại diện hiện tại"/>` : shortInitial(displayName(currentProfile));
@@ -1529,9 +1685,12 @@
     const display_name = $('#displayNameInput').value.trim();
     const nickname = $('#nicknameInput').value.trim();
     const bio = $('#bioInput').value.trim();
+    const dream_job = $('#dreamJobInput').value.trim();
+    const hobbies = $('#dreamHobbiesInput').value.trim();
+    const future_wishes = $('#futureWishesInput').value.trim();
     const profile_color = safeColor($('#profileColorInput').value);
     if (display_name.length < 1) return toast('Tên hiển thị không được để trống.', 'error');
-    if (display_name.length > 40 || nickname.length > 32 || bio.length > 180) return toast('Một trong các mục đã vượt quá số ký tự cho phép.', 'error');
+    if (display_name.length > 40 || nickname.length > 32 || bio.length > 180 || dream_job.length > 100 || hobbies.length > 160 || future_wishes.length > 200) return toast('Một trong các mục đã vượt quá số ký tự cho phép.', 'error');
     const button = $('#saveProfileButton'); button.disabled = true; button.textContent = 'Đang lưu...';
     const previousAvatarPath = currentProfile.avatar_path || null;
     let avatarPath = previousAvatarPath;
@@ -1545,7 +1704,7 @@
         if (uploadError) throw uploadError;
         avatarPath = path; uploadedNewAvatar = path;
       }
-      const { data, error } = await supabase.from('profiles').update({ display_name, nickname, bio, profile_color, avatar_path: avatarPath }).eq('id', currentUser.id).select('id,display_name,nickname,bio,avatar_path,profile_color,linked_providers,created_at,updated_at').single();
+      const { data, error } = await supabase.from('profiles').update({ display_name, nickname, bio, dream_job, hobbies, future_wishes, profile_color, avatar_path: avatarPath }).eq('id', currentUser.id).select('id,display_name,nickname,bio,dream_job,hobbies,future_wishes,avatar_path,profile_color,linked_providers,created_at,updated_at').single();
       if (error) throw error;
       const resolved = { ...data, avatar_url: await resolveSignedUrl(AVATAR_BUCKET, data.avatar_path) };
       currentProfile = resolved; profiles = profiles.map(profile => profile.id === resolved.id ? resolved : profile);
@@ -1820,6 +1979,10 @@
     $('#publicProfileName').textContent = displayName(profile);
     $('#publicProfileNickname').textContent = profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5';
     $('#publicProfileBio').textContent = profile.bio || 'đang viết tiếp câu chuyện thanh xuân...';
+    $('#publicDreamJob').textContent = profile.dream_job || 'Chưa chia sẻ';
+    $('#publicDreamHobbies').textContent = profile.hobbies || 'Chưa chia sẻ';
+    $('#publicFutureWishes').textContent = profile.future_wishes || 'Chưa chia sẻ';
+    $('#publicDreamCard').classList.toggle('public-dream-empty', !profile.dream_job && !profile.hobbies && !profile.future_wishes);
     $('#publicPhotoCount').textContent = own.filter(item => item.media_type === 'photo').length;
     $('#publicVideoCount').textContent = own.filter(item => item.media_type === 'video').length;
     $('#publicMemberSince').textContent = formatMonth(profile.created_at);
@@ -1950,6 +2113,12 @@
       else if (action === 'toggle-music-compact') toggleMusicCompact();
       else if (action === 'close-music-player') closeMusicPanel(true);
       else if (action === 'select-music-track') playMusicTrack(actionButton.dataset.musicTrack);
+      else if (action === 'switch-people-mode') switchPeopleMode(actionButton.dataset.mode);
+      else if (action === 'open-seat-picker') openSeatSelection();
+      else if (action === 'dismiss-seat-selection') { seatPromptShownForUserId = currentUser?.id || seatPromptShownForUserId; closeModals(); }
+      else if (action === 'choose-seat') await chooseClassroomSeat(actionButton.dataset.seatCode);
+      else if (action === 'current-seat') toast('Cậu đang ngồi ở chỗ này rồi nè ♡', 'info');
+      else if (action === 'seat-occupied') toast('Chỗ này đã có bạn ngồi rồi nha.', 'info');
       else if (action === 'upload-photo') openUpload('photo');
       else if (action === 'upload-video') openUpload('video');
       else if (action === 'open-yearbook') { yearbookOpened = true; yearbookSpreadIndex = 0; switchTab('yearbook'); renderYearbook(); }

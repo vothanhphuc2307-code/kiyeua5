@@ -413,3 +413,121 @@ button.public-profile-photo:focus-visible,.media-visual-open:focus-visible,.on-t
   .a5-music-panel.is-compact{width:calc(100vw - 8px);right:-4px}
 }
 @media(prefers-reduced-motion:reduce){.a5-music-panel.is-compact{animation:none}}
+
+/* A5 V3.4 — shared classroom seat map + profile dreams */
+.people-mode-switch{display:flex;gap:7px;align-items:center;padding:5px;width:max-content;max-width:100%;margin:0 0 17px;border:1px solid #f0dfe6;border-radius:15px;background:#fffafc;box-shadow:0 5px 16px #8b62790a}
+.people-mode-button{display:flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:9px 15px;border:1px solid transparent;border-radius:11px;background:transparent;color:#9d7b8c;font:inherit;font-size:11px;font-weight:900;cursor:pointer;transition:background .18s,color .18s,transform .18s}
+.people-mode-button:hover{transform:translateY(-1px);background:#fff1f5;color:#a45c79}
+.people-mode-button.active{background:linear-gradient(120deg,#f7dfe8,#fff0dc);border-color:#f0d7e2;color:#8e526c;box-shadow:0 3px 9px #b16e8714}
+.classroom-panel{display:grid;gap:16px;min-width:0;animation:classroomAppear .35s ease both}
+.classroom-board-wrap{position:relative;overflow:hidden;padding:18px;border:1px solid #efdde3;border-radius:23px;background:linear-gradient(145deg,#fff8f6,#fffdf5 62%,#f8f1ff);box-shadow:0 10px 30px #8f64750d}
+.classroom-board{position:relative;display:flex;align-items:center;justify-content:center;gap:14px;min-height:120px;padding:20px 24px;overflow:hidden;border:7px solid #d7b8a3;border-radius:13px;background:linear-gradient(135deg,#668c79,#4f7566);box-shadow:inset 0 0 0 2px #b1c8b8,0 5px 0 #d6b6a0;text-align:center;color:#fff9ed}
+.classroom-board:before{content:"";position:absolute;inset:8px;border:1px dashed #e8f0df66;border-radius:5px;pointer-events:none}
+.classroom-board>div{position:relative;display:grid;gap:5px}
+.classroom-board small{font-size:8px;letter-spacing:2px;font-weight:900;opacity:.86}
+.classroom-board strong{font-family:"Playfair Display",serif;font-size:clamp(27px,4vw,42px);letter-spacing:4px;text-shadow:0 2px 0 #3b5c4d}
+.classroom-board em{font-family:"Patrick Hand",cursive;font-size:16px;font-style:normal;opacity:.94}
+.classroom-board-flower,.classroom-board-spark{position:relative;font-size:34px;color:#ffe7a9;flex:0 0 auto;animation:classroomFloat 3.3s ease-in-out infinite}
+.classroom-board-spark{animation-delay:-1.1s}
+.classroom-teacher-desk{position:relative;display:flex;align-items:center;justify-content:center;gap:13px;width:min(420px,100%);margin:17px auto 0;padding:11px 17px;border:1px solid #ead4dd;border-radius:15px;background:linear-gradient(110deg,#fffdf8,#fff1f5);box-shadow:0 4px 0 #e7cfd8,0 9px 15px #ab708416}
+.teacher-bouquet{display:grid;place-items:center;width:41px;height:41px;flex:0 0 auto;border-radius:14px;background:#f9e4ec;font-size:22px}
+.classroom-teacher-desk>div{display:grid;min-width:0;gap:3px}
+.classroom-teacher-desk small{color:#b27991;font-size:8px;letter-spacing:1.25px;font-weight:900}
+.classroom-teacher-desk strong{color:#7e5269;font-size:13px;overflow-wrap:anywhere}
+.classroom-teacher-desk span:not(.teacher-bouquet):not(.teacher-heart){color:#a38a99;font-size:10px}
+.teacher-heart{margin-left:auto;color:#cf8aa4;font-size:25px;animation:classroomHeart 2.2s ease-in-out infinite}
+.classroom-status-row{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:3px 1px}
+.classroom-status-row h2{margin:5px 0 4px;color:#79576c;font-size:clamp(17px,2vw,22px);font-weight:900;letter-spacing:-.3px}
+.classroom-status-row p{margin:0;color:#a48c9b;font-size:10px;line-height:1.7}
+.classroom-seat-counter{display:grid;place-items:center;gap:2px;min-width:94px;padding:10px 13px;border:1px solid #efdae3;border-radius:14px;background:#fff7fa;color:#ac6b85}
+.classroom-seat-counter strong{font-size:22px;font-weight:1000;font-variant-numeric:tabular-nums}
+.classroom-seat-counter small{font-size:8px;color:#a78c9c;font-weight:800}
+.classroom-legend,.seat-picker-legend{display:flex;flex-wrap:wrap;align-items:center;gap:9px 17px;padding:10px 12px;border:1px dashed #efdbe3;border-radius:13px;background:#fffafc;color:#a18898;font-size:9px;line-height:1.5}
+.classroom-legend>span,.seat-picker-legend>span{display:flex;align-items:center;gap:6px}
+.legend-dot{display:inline-block;width:9px;height:9px;flex:0 0 auto;border-radius:50%;border:1px solid transparent}
+.legend-empty{background:#fff;border-color:#dfb9c8}
+.legend-occupied{background:#cdddcf;border-color:#9db9a1}
+.legend-own{background:#f0c9d8;border-color:#d995b0;box-shadow:0 0 0 3px #f8e5ed}
+.classroom-rows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:15px;min-width:0}
+.classroom-aisle{min-width:0;padding:12px;border:1px solid #eee0e5;border-radius:18px;background:linear-gradient(180deg,#fffbfa,#fffdf8);box-shadow:0 6px 20px #8f647509}
+.classroom-aisle-heading{display:flex;align-items:center;gap:9px;padding:3px 2px 12px}
+.aisle-letter{display:grid;place-items:center;width:32px;height:32px;flex:0 0 auto;border-radius:11px;background:#f5dfe8;color:#a75e7a;font-family:"Playfair Display",serif;font-weight:900;font-size:17px;box-shadow:0 3px 0 #edcbd9}
+.classroom-aisle:nth-child(2) .aisle-letter{background:#eae5fb;color:#7971ac;box-shadow:0 3px 0 #dcd4f3}
+.classroom-aisle-heading>div{display:grid;gap:2px;min-width:0}
+.classroom-aisle-heading strong{font-size:12px;color:#815b71}
+.classroom-aisle-heading small{font-size:8px;color:#ad96a4}
+.classroom-desk-grid,.seat-picker-desk-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;min-width:0}
+.classroom-desk{min-width:0;padding:7px 6px 8px;border:1px solid #f1e5e9;border-radius:13px;background:#fff;box-shadow:0 3px 8px #7e5b6c08;transition:transform .18s,border-color .18s,box-shadow .18s}
+.classroom-desk:hover{border-color:#e8c5d3;box-shadow:0 5px 13px #8d617710;transform:translateY(-1px)}
+.classroom-seat-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;min-width:0}
+.classroom-seat{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:2px;min-width:0;min-height:62px;padding:5px 2px 3px;border:1px solid transparent;border-radius:8px;background:#fff9fb;color:#9b7c8c;font:inherit;cursor:pointer;transition:background .16s,border .16s,transform .16s}
+.classroom-seat:hover:not(:disabled){background:#fff0f5;border-color:#e8bdd0;transform:translateY(-1px)}
+.classroom-seat:focus-visible{outline:2px solid #ca8aa4;outline-offset:2px}
+.classroom-seat.is-occupied{background:#f1f7ef;border-color:#e0eadb;color:#618268}
+.classroom-seat.is-own-seat{background:#fff0f5;border-color:#d99bb3;box-shadow:inset 0 0 0 1px #f7dbe5;color:#a45977}
+.classroom-seat:disabled{cursor:not-allowed;opacity:.72}
+.classroom-seat-avatar{display:grid;place-items:center;width:27px;height:27px;flex:0 0 auto;overflow:hidden;border:2px solid #fff;border-radius:50%;background:#f4e4ec;color:#a45d79;font-size:12px;font-weight:1000;box-shadow:0 1px 4px #76516512}
+.classroom-seat-avatar img{display:block;width:100%;height:100%;object-fit:cover}
+.classroom-seat-name{display:block;width:100%;max-width:100%;overflow:hidden;color:inherit;font-size:8px;font-weight:900;line-height:1.3;text-align:center;text-overflow:ellipsis;white-space:nowrap}
+.classroom-seat small{color:#b39aa9;font-size:7px;line-height:1.2}
+.classroom-desk-surface{position:relative;display:flex;align-items:center;justify-content:center;gap:4px;min-width:0;height:25px;margin:3px 0 4px;border:1px solid #d8b79c;border-radius:5px;background:linear-gradient(180deg,#ecd4bd,#e2c3a7);box-shadow:0 3px 0 #cda889, inset 0 1px 0 #fff4e3;color:#98775e}
+.classroom-desk-surface span{overflow:hidden;font-size:7px;font-weight:1000;letter-spacing:.5px;white-space:nowrap;text-overflow:ellipsis}
+.classroom-desk-surface i{position:absolute;right:6px;bottom:3px;width:5px;height:5px;border-radius:50%;background:#fdf3e5;opacity:.7}
+.classroom-bottom-note{display:flex;align-items:center;gap:11px;padding:13px 14px;border:1px solid #efdee5;border-radius:15px;background:linear-gradient(110deg,#fff4f8,#fffaf0);color:#a07c8e}
+.classroom-bottom-note>span{font-size:22px;flex:0 0 auto}
+.classroom-bottom-note p{flex:1;min-width:0;margin:0;font-size:10px;line-height:1.65}
+.classroom-bottom-note .outline-button{flex:0 0 auto;white-space:nowrap;padding:9px 11px;font-size:9px}
+.classroom-privacy-note{margin:13px 0 0;color:#b09aa7;font-size:9px;line-height:1.7}
+.classroom-not-ready{display:flex;align-items:flex-start;gap:13px;padding:17px;border:1px solid #f0d9e2;border-radius:15px;background:#fff7fa;color:#9d788c;line-height:1.7;font-size:11px}
+.classroom-not-ready>span{font-size:23px;flex:0 0 auto}
+.classroom-not-ready strong{display:block;color:#805970;font-size:12px}
+.classroom-not-ready p{margin:6px 0 0;overflow-wrap:anywhere}
+.seat-selection-modal{width:min(100%,900px);max-height:min(93dvh,1000px);overflow:auto}
+.seat-modal-sticker{display:grid;place-items:center;width:58px;height:58px;margin-bottom:12px;border-radius:19px;background:linear-gradient(135deg,#f8e3ed,#fff0d9);font-size:27px;box-shadow:0 5px 0 #ecd0dc}
+.seat-selection-modal h2{margin-bottom:5px}
+.seat-selection-modal .seat-picker-legend{margin:13px 0}
+.seat-picker-rows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;align-items:start}
+.seat-picker-aisle{min-width:0;padding:10px;border:1px solid #efdee5;border-radius:13px;background:#fffbfa}
+.seat-picker-aisle h3{margin:0 0 9px;color:#805b71;font-size:11px}
+.seat-picker-aisle .classroom-desk{padding:5px 4px}
+.seat-picker-aisle .classroom-seat{min-height:55px;padding:3px 1px}
+.seat-picker-aisle .classroom-seat-avatar{width:23px;height:23px}
+.seat-picker-aisle .classroom-seat-name{font-size:7px}
+.seat-picker-aisle .classroom-seat small{font-size:6px}
+.seat-picker-aisle .classroom-desk-surface{height:21px;margin:2px 0 3px}
+.seat-later-button{display:block;margin:13px auto 0}
+.dream-profile-card{margin:14px 0 17px;padding:19px;border:1px solid #eedbe4;border-radius:19px;background:linear-gradient(135deg,#fff9fb,#fffaf3 65%,#f7f3ff);box-shadow:0 8px 24px #90667c0b}
+.dream-profile-heading{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.dream-profile-icon{display:grid;place-items:center;width:43px;height:43px;flex:0 0 auto;border-radius:14px;background:#f8e4ec;font-size:21px}
+.dream-profile-heading>div{flex:1;min-width:0}
+.dream-profile-heading h3{margin:4px 0;color:#79566c;font-size:17px}
+.dream-profile-heading p{margin:0;color:#a38a99;font-size:10px;line-height:1.6}
+.dream-edit-button{flex:0 0 auto;padding:8px 10px;border:1px solid #edd5df;border-radius:10px;background:#fff;color:#aa6481;font:inherit;font-size:9px;font-weight:900;cursor:pointer}
+.dream-profile-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.dream-profile-grid article{min-width:0;padding:12px;border:1px solid #f0e1e7;border-radius:12px;background:#fffdfd}
+.dream-profile-grid article>span,.public-dream-field>span{display:block;margin-bottom:7px;color:#a47d91;font-size:9px;font-weight:900;line-height:1.5}
+.dream-profile-grid article>strong{display:block;color:#785b70;font-size:11px;line-height:1.65;overflow-wrap:anywhere;white-space:pre-wrap}
+.dream-privacy-note{margin:12px 1px 0;color:#ac91a0;font-size:9px;line-height:1.7}
+.dream-editor-divider{display:grid;gap:4px;margin:18px 0 6px;padding:12px;border:1px dashed #e8c6d5;border-radius:12px;background:#fff7fa}
+.dream-editor-divider span{color:#aa6883;font-size:9px;font-weight:1000;letter-spacing:1px}
+.dream-editor-divider small{color:#a58c9b;font-size:9px;line-height:1.6}
+.dream-editor-privacy{margin:10px 0 14px;padding:10px 11px;border-radius:10px;background:#fff7fa;color:#a37e91;font-size:9px;line-height:1.7}
+.public-dream-card{margin:14px 0;padding:14px;border:1px solid #efdee5;border-radius:15px;background:linear-gradient(135deg,#fff8fa,#fffdf4)}
+.public-dream-heading{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+.public-dream-heading>span{display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:#f8e5ed;font-size:18px}
+.public-dream-heading>div{display:grid;gap:3px}
+.public-dream-heading small{color:#b07891;font-size:7px;font-weight:1000;letter-spacing:1.2px}
+.public-dream-heading strong{color:#815d72;font-size:11px;line-height:1.45}
+.public-dream-field{padding:9px 10px;border-top:1px solid #f1e5e9}
+.public-dream-field>span{margin-bottom:4px;font-size:8px}
+.public-dream-field p{margin:0;color:#775c6f;font-size:10px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
+.public-dream-empty .public-dream-field p{color:#b5a0ad;font-style:italic}
+.person-dream-teaser{margin:5px 0 7px;color:#aa6c86;font-size:9px;line-height:1.5;overflow-wrap:anywhere}
+.person-seat-tag{display:inline-flex;align-items:center;gap:4px;margin:4px 0 1px;padding:5px 7px;border-radius:8px;background:#fff2f6;color:#a76a84;font-size:8px;font-weight:900}
+@keyframes classroomAppear{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes classroomFloat{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-3px) rotate(3deg)}}
+@keyframes classroomHeart{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+@media(max-width:900px){.classroom-board-wrap{padding:13px}.classroom-rows{gap:10px}.classroom-aisle{padding:8px}.classroom-desk-grid,.seat-picker-desk-grid{gap:7px}.classroom-desk{padding:5px 4px 6px}.classroom-seat{min-height:58px}.classroom-seat-avatar{width:24px;height:24px}.classroom-seat-name{font-size:7px}.classroom-status-row h2{font-size:17px}}
+@media(max-width:680px){.people-mode-switch{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;margin-bottom:13px}.people-mode-button{padding:8px 7px;font-size:10px}.classroom-panel{gap:12px}.classroom-board-wrap{padding:10px;border-radius:18px}.classroom-board{min-height:96px;padding:13px 9px;gap:8px;border-width:5px}.classroom-board small{font-size:6px;letter-spacing:1px}.classroom-board strong{font-size:28px;letter-spacing:3px}.classroom-board em{font-size:13px}.classroom-board-flower,.classroom-board-spark{font-size:23px}.classroom-teacher-desk{margin-top:14px;padding:9px 11px;gap:9px}.teacher-bouquet{width:34px;height:34px;font-size:18px;border-radius:11px}.classroom-teacher-desk strong{font-size:11px}.classroom-teacher-desk small{font-size:7px}.classroom-teacher-desk span:not(.teacher-bouquet):not(.teacher-heart){font-size:8px}.teacher-heart{font-size:20px}.classroom-status-row{align-items:flex-start}.classroom-status-row h2{font-size:15px;line-height:1.4}.classroom-status-row p{font-size:9px}.classroom-seat-counter{min-width:70px;padding:8px}.classroom-seat-counter strong{font-size:18px}.classroom-seat-counter small{font-size:7px}.classroom-legend,.seat-picker-legend{gap:7px 11px;padding:9px;font-size:8px}.classroom-rows{grid-template-columns:1fr;gap:11px}.classroom-aisle{padding:9px;border-radius:14px}.classroom-aisle-heading{padding-bottom:9px}.classroom-desk-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.classroom-desk{padding:7px 6px}.classroom-seat{min-height:63px;padding:5px 2px 3px}.classroom-seat-avatar{width:27px;height:27px}.classroom-seat-name{font-size:8px}.classroom-seat small{font-size:7px}.classroom-bottom-note{align-items:flex-start;flex-wrap:wrap;padding:11px;gap:8px}.classroom-bottom-note p{flex-basis:calc(100% - 32px);font-size:9px}.classroom-bottom-note .outline-button{margin-left:31px}.classroom-privacy-note{font-size:8px}.seat-selection-modal{max-height:94dvh}.seat-picker-rows{grid-template-columns:1fr;gap:10px}.seat-picker-aisle{padding:9px}.seat-picker-aisle .classroom-desk-grid,.seat-picker-desk-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.seat-picker-aisle .classroom-seat{min-height:59px}.dream-profile-card{padding:14px;border-radius:15px}.dream-profile-heading{gap:9px}.dream-profile-icon{width:36px;height:36px;font-size:18px}.dream-profile-heading h3{font-size:14px}.dream-profile-heading p{font-size:9px}.dream-profile-grid{grid-template-columns:1fr;gap:7px}.dream-profile-grid article{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);align-items:start;gap:8px;padding:10px}.dream-profile-grid article>span{margin:0;font-size:8px}.dream-profile-grid article>strong{text-align:right;font-size:9px}.dream-privacy-note{font-size:8px}.public-dream-card{padding:11px;margin:11px 0}.public-dream-heading strong{font-size:10px}.public-dream-field p{font-size:9px}.person-dream-teaser{font-size:8px}.person-seat-tag{font-size:7px}}
+@media(max-width:370px){.classroom-board{gap:5px;padding-inline:6px}.classroom-board small{font-size:5px;letter-spacing:.6px}.classroom-board strong{font-size:25px}.classroom-board em{font-size:12px}.classroom-seat{min-height:60px}.classroom-seat-avatar{width:23px;height:23px}.classroom-seat-name{font-size:7px}.classroom-legend{gap:6px 8px}.classroom-legend>span{font-size:7px}.classroom-bottom-note .outline-button{margin-left:0;width:100%}.dream-profile-grid article{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+@media(prefers-reduced-motion:reduce){.classroom-panel,.classroom-board-flower,.classroom-board-spark,.teacher-heart{animation:none!important;transition:none!important}}
