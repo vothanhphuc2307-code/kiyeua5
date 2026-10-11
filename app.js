@@ -446,6 +446,67 @@
     }
   }
 
+  // Sign many private media objects in batches instead of making one network request per file.
+  // This dramatically reduces initial-load latency on a feed with many photos and avatars.
+  async function resolveSignedUrls(bucket, paths) {
+    const result = new Map();
+    if (!supabase) return result;
+    const uniquePaths = [...new Set((paths || []).filter(path => typeof path === 'string' && path.trim()))];
+    const missing = [];
+    const now = Date.now();
+    for (const path of uniquePaths) {
+      const cached = signedUrlCache.get(`${bucket}:${path}`);
+      if (cached && cached.expiresAt > now && cached.url) result.set(path, cached.url);
+      else missing.push(path);
+    }
+    if (!missing.length) return result;
+
+    const batches = [];
+    for (let i = 0; i < missing.length; i += 70) batches.push(missing.slice(i, i + 70));
+    const failedPaths = [];
+    const batchResults = await Promise.allSettled(batches.map(pathsChunk =>
+      supabase.storage.from(bucket).createSignedUrls(pathsChunk, 86400)
+    ));
+
+    batchResults.forEach((batchResult, batchIndex) => {
+      const requestedPaths = batches[batchIndex];
+      if (batchResult.status !== 'fulfilled' || batchResult.value?.error) {
+        failedPaths.push(...requestedPaths);
+        return;
+      }
+      const rows = batchResult.value?.data || [];
+      const remaining = new Set(requestedPaths);
+      rows.forEach((row, rowIndex) => {
+        const rawPath = String(row?.path || row?.name || '').replace(/^\/+/, '');
+        let path = requestedPaths.includes(rawPath) ? rawPath : requestedPaths.find(candidate => rawPath.endsWith(`/${candidate}`));
+        if (!path && rows.length === requestedPaths.length) path = requestedPaths[rowIndex];
+        const url = row?.signedUrl || row?.signedURL || '';
+        if (!path || !url || row?.error) return;
+        remaining.delete(path);
+        const key = `${bucket}:${path}`;
+        signedUrlCache.set(key, { url, expiresAt: Date.now() + 22 * 60 * 60 * 1000 });
+        result.set(path, url);
+      });
+      failedPaths.push(...remaining);
+    });
+
+    // Graceful fallback for storage SDK/server responses that omit an item in the batch result.
+    // Limit concurrency so an unusual bucket response cannot flood the server with requests.
+    if (failedPaths.length) {
+      let cursor = 0;
+      const workers = Array.from({ length: Math.min(6, failedPaths.length) }, async () => {
+        while (cursor < failedPaths.length) {
+          const path = failedPaths[cursor++];
+          if (result.has(path)) continue;
+          const url = await resolveSignedUrl(bucket, path);
+          if (url) result.set(path, url);
+        }
+      });
+      await Promise.all(workers);
+    }
+    return result;
+  }
+
   async function loadData(showLoading = false) {
     if (!supabase || !currentUser) return;
     const token = ++pageLoadToken;
@@ -458,14 +519,17 @@
     try {
       const [profileResult, mediaResult] = await Promise.all([
         supabase.from('profiles').select('id,display_name,nickname,bio,dream_job,hobbies,future_wishes,avatar_path,profile_color,linked_providers,created_at,updated_at').order('created_at', { ascending: true }),
-        supabase.from('media_items').select('id,user_id,media_type,storage_path,caption,note_color,note_font,album_name,created_at,updated_at,profiles(id,display_name,nickname,bio,dream_job,hobbies,future_wishes,avatar_path,profile_color,linked_providers,created_at)').order('created_at', { ascending: false }).limit(200)
+        // Owners are joined in memory from the profiles result below. Avoid embedding
+        // the same profile fields into every media row; smaller response = faster startup.
+        supabase.from('media_items').select('id,user_id,media_type,storage_path,caption,note_color,note_font,album_name,created_at,updated_at').order('created_at', { ascending: false }).limit(200)
       ]);
       if (profileResult.error) throw profileResult.error;
       if (mediaResult.error) throw mediaResult.error;
       const rawProfiles = profileResult.data || [];
-      const profileResolved = await Promise.all(rawProfiles.map(async profile => ({
-        ...profile, avatar_url: await resolveSignedUrl(AVATAR_BUCKET, profile.avatar_path)
-      })));
+      const avatarUrlMap = await resolveSignedUrls(AVATAR_BUCKET, rawProfiles.map(profile => profile.avatar_path));
+      const profileResolved = rawProfiles.map(profile => ({
+        ...profile, avatar_url: profile.avatar_path ? (avatarUrlMap.get(profile.avatar_path) || '') : ''
+      }));
       if (token !== pageLoadToken) return;
       profiles = profileResolved;
       currentProfile = profiles.find(profile => profile.id === currentUser.id) || null;
@@ -474,16 +538,18 @@
         await ensureOwnProfile();
         const retry = await supabase.from('profiles').select('id,display_name,nickname,bio,dream_job,hobbies,future_wishes,avatar_path,profile_color,linked_providers,created_at,updated_at').eq('id', currentUser.id).maybeSingle();
         if (retry.data) {
-          const resolved = { ...retry.data, avatar_url: await resolveSignedUrl(AVATAR_BUCKET, retry.data.avatar_path) };
+          const retryAvatarUrls = await resolveSignedUrls(AVATAR_BUCKET, [retry.data.avatar_path]);
+          const resolved = { ...retry.data, avatar_url: retry.data.avatar_path ? (retryAvatarUrls.get(retry.data.avatar_path) || '') : '' };
           profiles = [...profiles.filter(p => p.id !== resolved.id), resolved]; currentProfile = resolved;
         }
       }
       const rawMedia = mediaResult.data || [];
-      mediaItems = await Promise.all(rawMedia.map(async item => {
-        const owner = profiles.find(profile => profile.id === item.user_id) || item.profiles || null;
-        const mediaUrl = await resolveSignedUrl(MEDIA_BUCKET, item.storage_path);
+      const mediaUrlMap = await resolveSignedUrls(MEDIA_BUCKET, rawMedia.map(item => item.storage_path));
+      mediaItems = rawMedia.map(item => {
+        const owner = profiles.find(profile => profile.id === item.user_id) || null;
+        const mediaUrl = mediaUrlMap.get(item.storage_path) || '';
         return { ...item, url: mediaUrl, profiles: owner };
-      }));
+      });
       if (token !== pageLoadToken) return;
       await loadClassroomSeats();
       await loadReactions();
@@ -491,7 +557,10 @@
       await loadNotifications();
       renderAll();
       if (!currentProfile) toast('Chưa tải được hồ sơ tài khoản. Hãy kiểm tra lại schema SQL trong Supabase.', 'error', 6000);
-      else maybePromptSeatSelection();
+      else {
+        const welcomeShown = maybeShowNewMemberWelcome();
+        if (!welcomeShown) maybePromptSeatSelection();
+      }
     } catch (error) {
       console.error('loadData failed:', error);
       const message = error?.message || 'Không rõ nguyên nhân';
@@ -649,8 +718,8 @@
     const mediaLabel = item.media_type === 'video' ? '▶ VIDEO' : '▧ ẢNH';
     const media = item.url
       ? (item.media_type === 'video'
-        ? `<video src="${escapeAttr(item.url)}" muted playsinline preload="metadata" tabindex="-1" aria-hidden="true"></video><span class="media-play-overlay" aria-hidden="true">▶<small>Chạm để xem</small></span>`
-        : `<img src="${escapeAttr(item.url)}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}" loading="lazy"/>`)
+        ? `<div class="media-video-placeholder" aria-hidden="true"><span>▶</span><small>VIDEO KỶ NIỆM</small><i>chạm để xem</i></div>`
+        : `<img src="${escapeAttr(item.url)}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}" loading="lazy" decoding="async"/>`)
       : `<div class="media-visual-fallback">${item.media_type === 'video' ? '▷' : '✿'}</div>`;
     const caption = item.caption ? `<p class="media-note" style="--note-color:${safeColor(item.note_color)};--note-font:'${safeFont(item.note_font)}'">${escapeHTML(item.caption)}</p>` : '';
     const album = item.album_name ? `<button type="button" class="event-album-tag" data-action="filter-album" data-album-name="${escapeAttr(item.album_name)}">✦ ${escapeHTML(item.album_name)}</button>` : '';
@@ -686,7 +755,7 @@
     if (message) message.textContent = matches.length ? `Hôm nay, mình cùng nhớ lại ${matches.length} kỷ niệm từ những năm trước.` : 'Từ hôm nay, hãy lưu thật nhiều điều — rồi kỷ niệm cũ sẽ trở về vào đúng ngày này.';
     grid.innerHTML = matches.length ? matches.map(item => {
       const owner = profiles.find(profile => profile.id === item.user_id) || {};
-      const preview = item.url ? (item.media_type === 'video' ? `<video src="${escapeAttr(item.url)}" muted playsinline preload="metadata" aria-hidden="true"></video><span class="on-day-play">▶</span>` : `<img src="${escapeAttr(item.url)}" alt="" loading="lazy"/>`) : '<span>♡</span>';
+      const preview = item.url ? (item.media_type === 'video' ? `<span class="media-video-placeholder on-day-video-placeholder" aria-hidden="true"><span>▶</span><small>VIDEO</small></span>` : `<img src="${escapeAttr(item.url)}" alt="" loading="lazy" decoding="async"/>`) : '<span>♡</span>';
       return `<button type="button" class="on-this-day-item" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}"><span class="on-this-day-thumb">${preview}</span><span class="on-this-day-item-copy"><strong>${escapeHTML(item.caption || 'Một ngày đáng nhớ')}</strong><small>${escapeHTML(displayName(owner))} · ${escapeHTML(formatDate(item.created_at, false))}</small></span></button>`;
     }).join('') : '<div class="on-this-day-empty">💌 Chưa có kỷ niệm từ những năm trước vào ngày hôm nay. Lưu một khoảnh khắc nhé — nó có thể trở lại trong tương lai.</div>';
   }
@@ -795,8 +864,9 @@
 
   function classroomDeskMarkup(rowCode, deskNumber, context = 'room') {
     const seats = [1, 2, 3, 4].map(number => classroomSeats.find(seat => seat.row_code === rowCode && seat.desk_number === deskNumber && seat.seat_number === number)).filter(Boolean);
-    const byNumber = number => seats.find(seat => seat.seat_number === number);
-    return `<article class="classroom-desk"><div class="classroom-seat-pair">${byNumber(1) ? classroomSeatMarkup(byNumber(1), context) : ''}${byNumber(2) ? classroomSeatMarkup(byNumber(2), context) : ''}</div><div class="classroom-desk-surface"><span>✿ BÀN ${String(deskNumber).padStart(2, '0')}</span><i aria-hidden="true"></i></div><div class="classroom-seat-pair">${byNumber(3) ? classroomSeatMarkup(byNumber(3), context) : ''}${byNumber(4) ? classroomSeatMarkup(byNumber(4), context) : ''}</div></article>`;
+    // One long horizontal table = one desk; all four students sit beside one another,
+    // not as two pairs on opposite sides of a table.
+    return `<article class="classroom-desk"><div class="classroom-seat-row">${seats.map(seat => classroomSeatMarkup(seat, context)).join('')}</div><div class="classroom-desk-surface"><span>✿ BÀN ${String(deskNumber).padStart(2, '0')}</span><i aria-hidden="true"></i></div></article>`;
   }
 
   function renderClassroom() {
@@ -843,6 +913,54 @@
     if (!classroomFeatureAvailable) return toast('Sơ đồ phòng học chưa được thiết lập. Hãy cập nhật database V3.4 trước nhé.', 'info', 5000);
     renderSeatPicker();
     openModal('seatSelectionModal');
+  }
+
+  const NEW_MEMBER_WELCOME_PREFIX = 'a5-welcome-v35:';
+  const NEW_MEMBER_WELCOME_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+  function welcomeStorageKey(userId) { return `${NEW_MEMBER_WELCOME_PREFIX}${userId}`; }
+  function hasSeenNewMemberWelcome(userId) {
+    try { return window.localStorage.getItem(welcomeStorageKey(userId)) === '1'; }
+    catch { return false; }
+  }
+  function markNewMemberWelcomeSeen(userId) {
+    try { window.localStorage.setItem(welcomeStorageKey(userId), '1'); }
+    catch (error) { console.warn('Could not save welcome-screen preference:', error?.message || error); }
+  }
+  function maybeShowNewMemberWelcome() {
+    if (!currentUser || !currentProfile) return false;
+    const createdAt = Date.parse(currentProfile.created_at || '');
+    if (!Number.isFinite(createdAt)) return false;
+    const profileAge = Date.now() - createdAt;
+    // Existing classmates keep their familiar flow; only newly created profiles get the welcome card.
+    if (profileAge < -5 * 60 * 1000 || profileAge > NEW_MEMBER_WELCOME_MAX_AGE_MS) return false;
+    if (hasSeenNewMemberWelcome(currentUser.id)) return false;
+    const greeting = $('#newMemberWelcomeName');
+    if (greeting) greeting.textContent = displayName(currentProfile);
+    markNewMemberWelcomeSeen(currentUser.id);
+    openModal('newMemberWelcomeModal');
+    return true;
+  }
+  function handleNewMemberWelcome(action) {
+    closeModals();
+    if (action === 'welcome-upload') {
+      openUpload('photo');
+      return;
+    }
+    if (action === 'welcome-classroom') {
+      switchTab('people');
+      if (!currentClassroomSeat()) window.setTimeout(openSeatSelection, 180);
+      else toast('Chỗ ngồi A5 của cậu vẫn đang chờ cậu ghé thăm ♡', 'success', 3500);
+      return;
+    }
+    if (action === 'welcome-yearbook') {
+      yearbookOpened = true; yearbookSpreadIndex = 0;
+      switchTab('yearbook'); renderYearbook();
+      return;
+    }
+    if (action === 'welcome-dismiss' && !currentClassroomSeat()) {
+      window.setTimeout(() => maybePromptSeatSelection(), 280);
+    }
   }
 
   function maybePromptSeatSelection() {
@@ -1989,7 +2107,7 @@
     const providers = new Set(profile.linked_providers || []);
     $('#publicProviders').innerHTML = `<span class="provider-chip ${providers.has('google') ? 'connected' : ''}">${providers.has('google') ? '✓ ' : ''}Google ${providers.has('google') ? 'đã liên kết' : 'chưa liên kết'}</span><span class="provider-chip ${providers.has('facebook') ? 'connected' : ''}">${providers.has('facebook') ? '✓ ' : ''}Facebook ${providers.has('facebook') ? 'đã liên kết' : 'chưa liên kết'}</span>`;
     const photos = own.slice(0, 8);
-    $('#publicProfilePhotos').innerHTML = photos.map(item => item.url ? (item.media_type === 'video' ? `<button type="button" class="public-profile-photo video-thumb" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở video kỷ niệm"><video src="${escapeAttr(item.url)}" muted playsinline preload="metadata" aria-hidden="true"></video><span>▶</span></button>` : `<button type="button" class="public-profile-photo" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở ảnh kỷ niệm"><img src="${escapeAttr(item.url)}" alt="Kỷ niệm" loading="lazy"/></button>`) : '<div class="public-profile-photo">✿</div>').join('');
+    $('#publicProfilePhotos').innerHTML = photos.map(item => item.url ? (item.media_type === 'video' ? `<button type="button" class="public-profile-photo video-thumb" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở video kỷ niệm"><span class="media-video-placeholder" aria-hidden="true"><span>▶</span><small>VIDEO</small></span></button>` : `<button type="button" class="public-profile-photo" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở ảnh kỷ niệm"><img src="${escapeAttr(item.url)}" alt="Kỷ niệm" loading="lazy" decoding="async"/></button>`) : '<div class="public-profile-photo">✿</div>').join('');
     $('#publicProfilePhotos').classList.toggle('hidden', photos.length === 0);
     openModal('publicProfileModal');
   }
@@ -2113,6 +2231,7 @@
       else if (action === 'toggle-music-compact') toggleMusicCompact();
       else if (action === 'close-music-player') closeMusicPanel(true);
       else if (action === 'select-music-track') playMusicTrack(actionButton.dataset.musicTrack);
+      else if (action === 'welcome-upload' || action === 'welcome-classroom' || action === 'welcome-yearbook' || action === 'welcome-dismiss') handleNewMemberWelcome(action);
       else if (action === 'switch-people-mode') switchPeopleMode(actionButton.dataset.mode);
       else if (action === 'open-seat-picker') openSeatSelection();
       else if (action === 'dismiss-seat-selection') { seatPromptShownForUserId = currentUser?.id || seatPromptShownForUserId; closeModals(); }
@@ -2174,7 +2293,11 @@
         event.preventDefault(); $('#globalSearch')?.focus();
       }
     });
-    $$('.modal-backdrop').forEach(modal => modal.addEventListener('click', event => { if (event.target === modal) closeModals(); }));
+    $$('.modal-backdrop').forEach(modal => modal.addEventListener('click', event => {
+      if (event.target !== modal) return;
+      if (modal.id === 'newMemberWelcomeModal') handleNewMemberWelcome('welcome-dismiss');
+      else closeModals();
+    }));
     $('#confirmModal')?.addEventListener('click', event => { if (event.target.id === 'confirmModal') closeModals(); });
   }
 
