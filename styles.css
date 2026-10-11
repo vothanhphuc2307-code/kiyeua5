@@ -664,3 +664,70 @@ button.public-profile-photo:focus-visible,.media-visual-open:focus-visible,.on-t
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
 }
 
+
+
+/* A5 MOTION POLISH v1.1 — make transitions perceptible without adding visual clutter */
+@keyframes a5SectionEnter {
+  0% { opacity: 0; transform: translate3d(0, 18px, 0) scale(.992); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes a5HeroTextEnter {
+  0% { opacity: 0; transform: translate3d(0, 14px, 0); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes a5HeroCollageEnter {
+  0% { opacity: 0; transform: translate3d(12px, 6px, 0) rotate(1deg) scale(.975); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) rotate(0) scale(1); }
+}
+@keyframes a5MemoryReveal {
+  0% { opacity: 0; transform: translate3d(0, 16px, 0) scale(.985); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes a5AmbientDrift {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(0, 14px, 0); }
+}
+
+/* A clearly visible, short fade-and-rise whenever a top-level section is opened. */
+.page-view.active { animation: a5SectionEnter .42s cubic-bezier(.22,.72,.2,1) both; }
+#page-home.active .hero-text { animation: a5HeroTextEnter .48s .05s cubic-bezier(.22,.72,.2,1) both; }
+#page-home.active .hero-collage { animation: a5HeroCollageEnter .58s .11s cubic-bezier(.22,.72,.2,1) both; }
+
+/* Reveal just the first six media cards with a short stagger; the rest stay immediate. */
+.media-grid>.memory-card:nth-child(-n+6),
+#profileMediaGrid>.memory-card:nth-child(-n+6) {
+  animation-name: a5MemoryReveal;
+  animation-duration: .42s;
+  animation-timing-function: cubic-bezier(.22,.72,.2,1);
+  animation-fill-mode: both;
+}
+.media-grid>.memory-card:nth-child(1),#profileMediaGrid>.memory-card:nth-child(1){animation-delay:.025s}
+.media-grid>.memory-card:nth-child(2),#profileMediaGrid>.memory-card:nth-child(2){animation-delay:.065s}
+.media-grid>.memory-card:nth-child(3),#profileMediaGrid>.memory-card:nth-child(3){animation-delay:.105s}
+.media-grid>.memory-card:nth-child(4),#profileMediaGrid>.memory-card:nth-child(4){animation-delay:.145s}
+.media-grid>.memory-card:nth-child(5),#profileMediaGrid>.memory-card:nth-child(5){animation-delay:.185s}
+.media-grid>.memory-card:nth-child(6),#profileMediaGrid>.memory-card:nth-child(6){animation-delay:.225s}
+
+/* Desktop-only ambience: visible but slow, with transform-only motion. */
+@media(min-width:761px) and (hover:hover) and (pointer:fine){
+  .ambient-one{animation:a5AmbientDrift 13s ease-in-out infinite}
+  .ambient-two{animation:a5AmbientDrift 17s ease-in-out infinite reverse}
+  #page-home.active .collage-polaroid{animation:a5PolaroidDrift 6.8s ease-in-out infinite}
+  #page-home.active .sticker-b{animation:a5StickerDrift 5.8s ease-in-out infinite}
+  #page-home.active .collage-note{animation:a5NoteDrift 6.2s ease-in-out infinite}
+  .yearbook-polaroid:hover{transform:translateY(-4px) rotate(-1deg);transition:transform .22s ease}
+}
+
+/* Mobile retains the entrance transitions, but not perpetual decorative movement. */
+@media(max-width:760px){
+  .page-view.active{animation-duration:.34s}
+  #page-home.active .hero-text{animation-duration:.38s}
+  #page-home.active .hero-collage{animation-duration:.42s;animation-delay:.06s}
+  .media-grid>.memory-card:nth-child(-n+6),#profileMediaGrid>.memory-card:nth-child(-n+6){animation-duration:.32s}
+  .media-grid>.memory-card:nth-child(1),#profileMediaGrid>.memory-card:nth-child(1){animation-delay:.01s}
+  .media-grid>.memory-card:nth-child(2),#profileMediaGrid>.memory-card:nth-child(2){animation-delay:.035s}
+  .media-grid>.memory-card:nth-child(3),#profileMediaGrid>.memory-card:nth-child(3){animation-delay:.06s}
+  .media-grid>.memory-card:nth-child(4),#profileMediaGrid>.memory-card:nth-child(4){animation-delay:.085s}
+  .media-grid>.memory-card:nth-child(5),#profileMediaGrid>.memory-card:nth-child(5){animation-delay:.11s}
+  .media-grid>.memory-card:nth-child(6),#profileMediaGrid>.memory-card:nth-child(6){animation-delay:.135s}
+}
