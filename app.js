@@ -196,14 +196,46 @@
       </button>`).join('');
   }
 
+  function updateMusicCompactControls(isCompact) {
+    const widget = $('#a5MusicWidget');
+    const panel = $('#a5MusicPanel');
+    const compactButton = $('.a5-music-minimize');
+    const toggle = $('#a5MusicToggle');
+    if (widget) widget.classList.toggle('is-compact', isCompact);
+    if (panel) panel.classList.toggle('is-compact', isCompact);
+    if (compactButton) {
+      compactButton.textContent = isCompact ? '☷' : '−';
+      compactButton.setAttribute('aria-label', isCompact ? 'Mở danh sách bài hát' : 'Thu nhỏ trình phát, nhạc vẫn tiếp tục');
+      compactButton.title = isCompact ? 'Mở danh sách bài hát' : 'Thu nhỏ · nhạc vẫn phát';
+    }
+    toggle?.setAttribute('aria-expanded', 'true');
+    toggle?.classList.add('is-open');
+  }
+
   function openMusicPanel() {
     const widget = $('#a5MusicWidget');
     const panel = $('#a5MusicPanel');
     const toggle = $('#a5MusicToggle');
     if (!widget || !panel || widget.classList.contains('hidden')) return;
     panel.classList.remove('hidden');
+    updateMusicCompactControls(false);
     toggle?.setAttribute('aria-expanded', 'true');
     toggle?.classList.add('is-open');
+  }
+
+  function toggleMusicCompact() {
+    const panel = $('#a5MusicPanel');
+    if (!panel) return;
+    if (panel.classList.contains('hidden')) {
+      openMusicPanel();
+      return;
+    }
+    const goingCompact = !panel.classList.contains('is-compact');
+    if (goingCompact && !activeMusicTrackKey) {
+      toast('Chọn một bài trước rồi thu nhỏ trình phát nhé ♡', 'info');
+      return;
+    }
+    updateMusicCompactControls(goingCompact);
   }
 
   function resetMusicPlayerContent() {
@@ -221,6 +253,7 @@
   }
 
   function closeMusicPanel(stopPlayback = true) {
+    const widget = $('#a5MusicWidget');
     const panel = $('#a5MusicPanel');
     const toggle = $('#a5MusicToggle');
     if (stopPlayback) {
@@ -228,6 +261,14 @@
       resetMusicPlayerContent();
     }
     panel?.classList.add('hidden');
+    panel?.classList.remove('is-compact');
+    widget?.classList.remove('is-compact');
+    const compactButton = $('.a5-music-minimize');
+    if (compactButton) {
+      compactButton.textContent = '−';
+      compactButton.setAttribute('aria-label', 'Thu nhỏ trình phát, nhạc vẫn tiếp tục');
+      compactButton.title = 'Thu nhỏ · nhạc vẫn phát';
+    }
     toggle?.setAttribute('aria-expanded', 'false');
     toggle?.classList.remove('is-open');
   }
@@ -235,8 +276,15 @@
   function toggleMusicPanel() {
     const panel = $('#a5MusicPanel');
     if (!panel) return;
-    if (panel.classList.contains('hidden')) openMusicPanel();
-    else closeMusicPanel(true);
+    if (panel.classList.contains('hidden')) {
+      openMusicPanel();
+    } else if (panel.classList.contains('is-compact')) {
+      openMusicPanel();
+    } else if (activeMusicTrackKey) {
+      updateMusicCompactControls(true);
+    } else {
+      closeMusicPanel(false);
+    }
   }
 
   function playMusicTrack(trackKey) {
@@ -263,6 +311,8 @@
     const origin = `&origin=${encodeURIComponent(window.location.origin)}`;
     const embedUrl = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(track.videoId)}?autoplay=1&controls=1&playsinline=1&rel=0${start}${origin}`;
     wrap.innerHTML = `<iframe class="a5-music-iframe" src="${escapeAttr(embedUrl)}" title="${escapeAttr(`${track.title} — trình phát YouTube`)}" loading="eager" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture; web-share" allowfullscreen></iframe>`;
+    // Collapse the playlist, but keep the official YouTube player visible at a compliant size.
+    updateMusicCompactControls(true);
   }
 
   function showAuthScreen() {
@@ -1897,6 +1947,7 @@
       if (!actionButton) return;
       const action = actionButton.dataset.action;
       if (action === 'toggle-music-panel') toggleMusicPanel();
+      else if (action === 'toggle-music-compact') toggleMusicCompact();
       else if (action === 'close-music-player') closeMusicPanel(true);
       else if (action === 'select-music-track') playMusicTrack(actionButton.dataset.musicTrack);
       else if (action === 'upload-photo') openUpload('photo');
