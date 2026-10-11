@@ -191,3 +191,132 @@ button.public-profile-photo:focus-visible,.media-visual-open:focus-visible,.on-t
 .viewer-close:focus-visible,.viewer-actions button:focus-visible,.notification-row:focus-visible{outline:3px solid #f0a7c2;outline-offset:2px}
 .viewer-media-content img{user-select:none;-webkit-user-drag:none}
 @media (prefers-reduced-motion:reduce){.media-visual-open>img,.media-visual-open>video,button.public-profile-photo{transition:none!important}.media-card,.on-this-day-item{animation:none!important}}
+
+/* V3.2: living scrapbook / page-flip yearbook */
+.yearbook-hero-link{white-space:nowrap}
+.yearbook-page-view{--yearbook-paper:#fff9eb;--yearbook-ink:#76534f;--yearbook-rose:#bd7189;--yearbook-line:#eddfcd}
+.yearbook-intro-note{display:flex;align-items:flex-start;gap:13px;margin:0 0 22px;padding:15px 18px;background:linear-gradient(110deg,#fff7f0,#fff4f7);border:1px solid #f1dfe2;border-radius:16px;color:#947989;box-shadow:0 7px 20px #b9809520}
+.yearbook-intro-note p{margin:0;font-size:12px;line-height:1.8}
+.yearbook-intro-sticker{display:grid;place-items:center;flex:0 0 35px;width:35px;height:35px;border-radius:12px;background:#f5dce7;color:#b05d7c;font-size:20px;transform:rotate(-8deg)}
+.yearbook-cover{position:relative;isolation:isolate;max-width:850px;min-height:480px;margin:28px auto 42px;padding:13px 13px 13px 23px;border:1px solid #8e4c61;border-radius:10px 22px 22px 10px;background:linear-gradient(90deg,#6e354b 0,#874259 2.7%,#c88a9a 4%,#8f455d 5.4%,#b66c83 8%,#c58291 100%);box-shadow:0 22px 48px #76445b35,0 5px 0 #8d4a60,0 10px 0 #65344a;overflow:hidden}
+.yearbook-cover:before{content:"";position:absolute;inset:13px 13px 13px 25px;border:1px solid #f8d8df9e;border-radius:6px 16px 16px 6px;pointer-events:none;z-index:-1}
+.yearbook-cover:after{content:"";position:absolute;top:0;bottom:0;left:14px;width:13px;background:repeating-linear-gradient(to bottom,#79364d 0 7px,#aa6179 7px 12px);box-shadow:2px 0 5px #54283c65;z-index:0}
+.yearbook-cover-inner{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:452px;padding:36px 28px 28px;border-radius:6px 15px 15px 6px;text-align:center;color:#fff5e8;background:radial-gradient(ellipse at 50% 35%,#d7a0a5 0,#b97789 45%,#a65e77 100%);box-shadow:inset 0 0 35px #6e344a22}
+.yearbook-cover-kicker{font-size:10px;font-weight:900;letter-spacing:3px;color:#ffe6d9}
+.yearbook-cover-emblem{display:flex;align-items:center;justify-content:center;gap:18px;margin:25px 0 13px;color:#f8e4c7;font-size:25px}
+.yearbook-cover-emblem i{display:grid;place-items:center;width:64px;height:64px;border:1px solid #f8e4c7b5;border-radius:50%;font-size:29px;font-style:normal}
+.yearbook-cover-inner h2{margin:0;color:#fff7ed;font:700 clamp(25px,4vw,42px)/1.15 "Playfair Display",Georgia,serif;letter-spacing:1px;text-shadow:0 2px 2px #71384b30}
+.yearbook-cover-inner h2 em{font-style:italic;color:#ffe5c1}
+.yearbook-cover-rule{display:flex;align-items:center;gap:12px;margin:18px 0 16px;font-size:9px;font-weight:900;letter-spacing:2.2px;color:#fbe5d0}
+.yearbook-cover-rule span{display:inline-block;width:38px;height:1px;background:#f3d9c9a8}
+.yearbook-cover-inner>p{max-width:420px;margin:0 auto;color:#fff0e6;font:italic 16px/1.7 "Patrick Hand","Nunito",sans-serif}
+.yearbook-cover-bottom{display:flex;justify-content:center;gap:20px;flex-wrap:wrap;margin-top:22px;color:#ffe6d8;font-size:9px;font-weight:800;letter-spacing:.5px}
+.yearbook-open-button{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:24px;padding:12px 20px;border:1px solid #ffe8d9;border-radius:999px;background:#fff1e7;color:#a4526f;font:900 12px "Nunito",sans-serif;box-shadow:0 7px 16px #71384b2e;cursor:pointer;transition:transform .2s,box-shadow .2s}
+.yearbook-open-button:hover{transform:translateY(-2px);box-shadow:0 10px 20px #71384b35}
+.yearbook-cover-corner{position:absolute;z-index:2;color:#fce2c9;opacity:.75;font-size:44px;pointer-events:none}
+.yearbook-cover-corner-one{left:43px;top:32px}.yearbook-cover-corner-two{right:36px;bottom:26px;font-size:36px}
+.yearbook-reading{max-width:1240px;margin:0 auto 30px;animation:yearbookReadingIn .45s ease both}
+.yearbook-reading-toolbar{display:flex;align-items:center;gap:14px;margin:0 0 16px}
+.yearbook-back-cover{white-space:nowrap}
+.yearbook-reading-status{display:grid;gap:3px;flex:1;min-width:0;text-align:center}
+.yearbook-reading-status strong{font-family:"Playfair Display",Georgia,serif;font-size:17px;color:#795568}
+.yearbook-reading-status small{font-size:10px;color:#a48b9b}
+.yearbook-page-controls{display:flex;gap:7px}
+.yearbook-page-button{display:grid;place-items:center;width:43px;height:43px;border:1px solid #ead5de;border-radius:14px;background:#fff9fb;color:#ad5876;font-size:23px;box-shadow:0 3px 0 #eddde3;cursor:pointer;transition:transform .15s,background .15s}
+.yearbook-page-button:hover:not(:disabled){transform:translateY(-2px);background:#f9e5ed}
+.yearbook-page-button:disabled{opacity:.35;cursor:not-allowed;box-shadow:none}
+.yearbook-book-shell{position:relative;padding:12px;border:1px solid #8c5b5d;border-radius:18px;background:linear-gradient(125deg,#965f4e,#b68067 55%,#8e544b);box-shadow:0 18px 35px #65433b26,inset 0 0 0 3px #c99b7b7a}
+.yearbook-book-shell:before{content:"";position:absolute;inset:7px;border:1px solid #f4d5b56b;border-radius:12px;pointer-events:none;z-index:3}
+.yearbook-book-ribbon{position:absolute;right:8%;top:0;width:20px;height:70px;background:#c86b83;clip-path:polygon(0 0,100% 0,100% 100%,50% 80%,0 100%);z-index:4;filter:drop-shadow(0 2px 2px #62403640)}
+.yearbook-spread{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);min-height:610px;perspective:1500px;transform-style:preserve-3d;box-shadow:0 4px 10px #583a2925}
+.yearbook-spread:after{content:"";position:absolute;z-index:2;top:0;bottom:0;left:50%;width:22px;transform:translateX(-50%);background:linear-gradient(90deg,#72544700,#8e6d593b 25%,#72544734 50%,#fff8e700);pointer-events:none}
+.yearbook-spread.is-mobile{grid-template-columns:minmax(0,1fr);min-height:520px}
+.yearbook-spread.is-mobile:after{display:none}
+.yearbook-page{position:relative;display:flex;flex-direction:column;min-width:0;min-height:610px;padding:20px 19px 15px;overflow:hidden;color:var(--yearbook-ink);background-color:var(--yearbook-paper);background-image:linear-gradient(90deg,#e8d7c81c 1px,transparent 1px),repeating-linear-gradient(0deg,transparent 0 27px,#cfbdaa17 28px,#cfbdaa17 29px);}
+.yearbook-page-left{border-radius:5px 0 0 5px;box-shadow:inset -8px 0 15px -14px #493124}
+.yearbook-page-right{border-radius:0 5px 5px 0;box-shadow:inset 8px 0 15px -14px #493124}
+.yearbook-page-single{border-radius:5px;min-height:580px}
+.yearbook-page-topline{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 0 11px;border-bottom:1px solid #b78d7640;color:#a08777;font-size:8px;font-weight:900;letter-spacing:1px}
+.yearbook-page-items{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-content:start;align-items:start;gap:22px 16px;flex:1;padding:24px 2px 22px}
+.yearbook-polaroid{position:relative;min-width:0;padding:8px 8px 10px;background:#fffdf6;border:1px solid #e8ded0;box-shadow:0 4px 9px #806c4f1c,0 13px 19px #765b4521;transform:rotate(var(--tilt));transition:transform .22s ease,box-shadow .22s ease;break-inside:avoid}
+.yearbook-polaroid:nth-child(even){margin-top:18px}
+.yearbook-polaroid:hover{z-index:2;transform:rotate(0deg) translateY(-3px);box-shadow:0 8px 18px #765b4530}
+.yearbook-tape{position:absolute;z-index:2;top:-8px;left:calc(50% - 23px);width:46px;height:15px;background:color-mix(in srgb,var(--paper-accent) 60%,#fff9e7);opacity:.8;transform:rotate(-4deg);clip-path:polygon(3% 0,98% 3%,100% 94%,0 100%);box-shadow:0 2px 4px #65514013}
+.yearbook-polaroid:nth-child(even) .yearbook-tape{transform:rotate(5deg)}
+.yearbook-media-button{position:relative;display:grid;place-items:center;width:100%;aspect-ratio:4/3;min-height:80px;padding:0;overflow:hidden;border:0;background:#f0e5d6;color:#87596b;cursor:zoom-in;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.yearbook-media-button img,.yearbook-video-visual video{display:block;width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
+.yearbook-video-visual{position:absolute;inset:0;display:grid;place-items:center;overflow:hidden;background:linear-gradient(135deg,#d9a8b4,#b3b0d7 52%,#f1cd9e)}
+.yearbook-video-play{position:relative;z-index:1;display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:#fffaf0e8;color:#ad5d78;padding-left:3px;box-shadow:0 3px 12px #59334525}
+.yearbook-video-label{position:absolute;z-index:1;left:7px;bottom:7px;padding:4px 6px;border-radius:6px;background:#583d4dba;color:#fff9f5;font-size:7px;font-weight:900;letter-spacing:1px}
+.yearbook-missing-visual{display:grid;place-items:center;gap:5px;min-height:105px;width:100%;font-size:25px;background:linear-gradient(135deg,#f8e8ed,#f8f0dc)}
+.yearbook-missing-visual small{font-size:8px;color:#a58691}
+.yearbook-zoom-hint{position:absolute;right:5px;bottom:5px;display:grid;place-items:center;width:22px;height:22px;border-radius:7px;background:#fff8efdf;color:#945a70;font-size:13px;opacity:0;transition:opacity .2s}
+.yearbook-media-button:hover .yearbook-zoom-hint,.yearbook-media-button:focus-visible .yearbook-zoom-hint{opacity:1}
+.yearbook-polaroid-copy{padding:9px 3px 0}
+.yearbook-date-note{display:block;margin-bottom:5px;color:#a78c7d;font:10px "Patrick Hand","Nunito",sans-serif}
+.yearbook-event-note{display:block;color:var(--paper-accent);font:800 10px/1.35 "Nunito",sans-serif;overflow-wrap:anywhere}
+.yearbook-polaroid-copy p{margin:5px 0 6px;color:#786368;font:12px/1.5 "Patrick Hand","Nunito",sans-serif;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.yearbook-signed{display:block;color:#b29b91;font:9px "Patrick Hand","Nunito",sans-serif;text-align:right;overflow-wrap:anywhere}
+.yearbook-page-footer{display:flex;justify-content:space-between;gap:8px;padding-top:9px;border-top:1px solid #b78d7640;color:#ab9282;font:10px "Patrick Hand","Nunito",sans-serif}
+.yearbook-page-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;grid-column:1/-1;min-height:250px;padding:18px;text-align:center;color:#a18586}
+.yearbook-page-empty>span{font-size:34px;color:#cf8aa0}
+.yearbook-page-empty strong{margin-top:10px;font:700 16px "Playfair Display",Georgia,serif;color:#8b6174}
+.yearbook-page-empty p{max-width:240px;font-size:10px;line-height:1.7}
+.yearbook-reading-footer{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:13px 4px;color:#a18b98;font-size:10px}
+.yearbook-spread.turn-forward{animation:yearbookPageForward .62s cubic-bezier(.22,.74,.2,1)}
+.yearbook-spread.turn-backward{animation:yearbookPageBackward .62s cubic-bezier(.22,.74,.2,1)}
+@keyframes yearbookPageForward{0%{opacity:.7;transform:perspective(1400px) rotateY(-7deg) translateX(14px)}48%{opacity:.86;transform:perspective(1400px) rotateY(3deg) translateX(2px)}100%{opacity:1;transform:perspective(1400px) rotateY(0) translateX(0)}}
+@keyframes yearbookPageBackward{0%{opacity:.7;transform:perspective(1400px) rotateY(7deg) translateX(-14px)}48%{opacity:.86;transform:perspective(1400px) rotateY(-3deg) translateX(-2px)}100%{opacity:1;transform:perspective(1400px) rotateY(0) translateX(0)}}
+@keyframes yearbookReadingIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:760px){
+ .yearbook-cover{min-height:420px;margin:20px auto 30px;padding:9px 9px 9px 18px}
+ .yearbook-cover-inner{min-height:402px;padding:29px 18px 22px}
+ .yearbook-cover-kicker{font-size:8px;letter-spacing:2px}
+ .yearbook-cover-emblem{margin:20px 0 12px}
+ .yearbook-cover-inner>p{font-size:14px}
+ .yearbook-cover-bottom{font-size:8px;gap:11px}
+ .yearbook-cover-corner-one{left:31px;top:25px;font-size:31px}.yearbook-cover-corner-two{right:24px;bottom:19px;font-size:28px}
+ .yearbook-reading-toolbar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px}
+ .yearbook-back-cover{font-size:9px;padding:9px 10px}
+ .yearbook-reading-status strong{font-size:13px}.yearbook-reading-status small{font-size:9px}
+ .yearbook-page-button{width:36px;height:36px;border-radius:11px;font-size:19px}
+ .yearbook-book-shell{padding:7px;border-radius:13px}
+ .yearbook-book-shell:before{inset:4px;border-radius:9px}
+ .yearbook-book-ribbon{right:9%;width:15px;height:48px}
+ .yearbook-spread{min-height:0}
+ .yearbook-page,.yearbook-page-single{min-height:570px;padding:15px 12px 12px}
+ .yearbook-page-items{gap:18px 10px;padding:22px 0 18px}
+ .yearbook-polaroid{padding:6px 6px 8px}
+ .yearbook-polaroid:nth-child(even){margin-top:14px}
+ .yearbook-media-button{min-height:74px}
+ .yearbook-date-note{font-size:9px}
+ .yearbook-event-note{font-size:9px}
+ .yearbook-polaroid-copy p{font-size:11px}
+ .yearbook-page-topline{font-size:7px;letter-spacing:.5px}
+ .yearbook-page-footer{font-size:9px}
+ .yearbook-reading-footer{font-size:9px;line-height:1.6}
+ .yearbook-intro-note{gap:9px;padding:12px;border-radius:13px}
+ .yearbook-intro-note p{font-size:10px}
+ .yearbook-hero-link{white-space:normal}
+ .mobile-nav-item{min-width:0;flex:1}
+ .mobile-nav-item small{font-size:7px;white-space:nowrap}
+ .mobile-add{flex:0 0 40px;width:40px;height:40px}
+}
+@media(max-width:370px){
+ .yearbook-cover{min-height:390px}
+ .yearbook-cover-inner{min-height:372px;padding-inline:13px}
+ .yearbook-cover-inner h2{font-size:clamp(22px,8vw,30px)}
+ .yearbook-cover-emblem i{width:52px;height:52px}
+ .yearbook-page,.yearbook-page-single{min-height:520px;padding:12px 9px 10px}
+ .yearbook-page-items{gap:16px 7px}
+ .yearbook-polaroid{padding:5px 5px 7px}
+ .yearbook-polaroid-copy p{font-size:10px}
+ .yearbook-reading-toolbar{grid-template-columns:auto minmax(0,1fr) auto}
+ .yearbook-back-cover{font-size:8px;padding:8px 7px}
+ .yearbook-reading-status strong{font-size:11px}
+ .yearbook-page-button{width:31px;height:31px}
+ .mobile-nav{gap:0}
+ .mobile-nav-item small{font-size:6px}
+ .mobile-add{flex-basis:36px;width:36px;height:36px}
+}
+@media(prefers-reduced-motion:reduce){.yearbook-reading,.yearbook-spread.turn-forward,.yearbook-spread.turn-backward,.yearbook-polaroid{animation:none!important;transition:none!important}}

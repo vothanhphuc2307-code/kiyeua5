@@ -34,6 +34,15 @@
   let galleryMonthFilter = 'all';
   let signedUrlCache = new Map();
   let activeTab = 'home';
+  let yearbookOpened = false;
+  let yearbookSpreadIndex = 0;
+  let yearbookTurning = false;
+  let yearbookMediaCache = null;
+  let yearbookSignedUrls = new Map();
+  let yearbookLoading = false;
+  let yearbookLoadGeneration = 0;
+  let yearbookRenderGeneration = 0;
+  let yearbookTouchStart = null;
   let homeFilter = 'all';
   let galleryFilter = 'all';
   let searchTerm = '';
@@ -61,6 +70,13 @@
   function safeFont(value) { return FONT_ALLOWLIST.includes(value) ? value : 'Nunito'; }
   function shortInitial(name) { const text = String(name || 'A5').trim(); return escapeHTML(text ? [...text][0].toUpperCase() : 'A'); }
   function displayName(profile) { return profile?.display_name || profile?.nickname || 'Bạn A5'; }
+  function findMediaItem(mediaId) {
+    const feedItem = mediaItems.find(item => item.id === mediaId);
+    if (feedItem) return feedItem;
+    const bookItem = Array.isArray(yearbookMediaCache) ? yearbookMediaCache.find(item => item.id === mediaId) : null;
+    if (!bookItem) return null;
+    return { ...bookItem, url: yearbookSignedUrls.get(bookItem.id) || bookItem.url || '' };
+  }
   function humanBytes(bytes) {
     if (!Number.isFinite(bytes)) return '';
     if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -198,6 +214,7 @@
         window.setTimeout(() => {
           if (event === 'SIGNED_OUT') {
             currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; lastUserId = null;
+            yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookOpened = false; yearbookSpreadIndex = 0;
             showAuthScreen();
           } else if (session?.user) {
             handleSession(session).catch(error => {
@@ -259,6 +276,7 @@
     if (button) button.disabled = false;
     if (error) { console.error(error); toast('Chưa đăng xuất được. Thử lại nhé.', 'error'); return; }
     currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; lastUserId = null;
+    yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookOpened = false; yearbookSpreadIndex = 0;
     signedUrlCache.clear(); showAuthScreen(); toast('Hẹn gặp cậu ở cuốn lưu bút nhé ♡', 'success');
   }
 
@@ -282,6 +300,7 @@
   async function loadData(showLoading = false) {
     if (!supabase || !currentUser) return;
     const token = ++pageLoadToken;
+    yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookRenderGeneration += 1;
     if (showLoading) {
       $('#homeMediaGrid').innerHTML = loadingCard('Đang tìm lại những kỷ niệm...');
       $('#galleryMediaGrid').innerHTML = loadingCard('Đang xếp album...');
@@ -606,21 +625,185 @@
       button.title = connected ? 'Tài khoản đã được liên kết' : `Liên kết ${provider === 'google' ? 'Google' : 'Facebook'}`;
     }
   }
+  function yearbookIsMobile() {
+    return window.matchMedia ? window.matchMedia('(max-width: 760px)').matches : window.innerWidth <= 680;
+  }
+
+  function yearbookItemsPerSpread() { return yearbookIsMobile() ? 2 : 4; }
+
+  function renderYearbookCover() {
+    const count = $('#yearbookCoverCount');
+    if (count) {
+      const n = Array.isArray(yearbookMediaCache) ? yearbookMediaCache.length : mediaItems.length;
+      count.textContent = n
+        ? `${n} kỷ niệm gần đây đang chờ được lật xem ♡`
+        : 'Trang giấy đầu tiên đang chờ kỷ niệm của A5 ♡';
+    }
+    $('#yearbookCover')?.classList.toggle('hidden', yearbookOpened);
+    $('#yearbookReading')?.classList.toggle('hidden', !yearbookOpened);
+  }
+
+  function renderYearbookPage(items, side, pageNumber, isMobile, baseIndex) {
+    const pageItems = items || [];
+    const content = pageItems.length ? pageItems.map((item, index) => {
+      const owner = profiles.find(profile => profile.id === item.user_id) || item.profiles || {};
+      const absoluteIndex = baseIndex + index;
+      const tilt = [-1.6, 1.1, -0.8, 1.8, -1.2, 0.6][absoluteIndex % 6];
+      const accent = ['#e9a8b9', '#eecb86', '#a8cbb5', '#b8b4e0', '#e4a78a'][absoluteIndex % 5];
+      const date = formatDate(item.created_at, false);
+      const event = String(item.album_name || '').trim() || 'Những ngày bình thường';
+      const caption = String(item.caption || '').trim() || 'Một khoảnh khắc nhỏ, để sau này còn nhớ ♡';
+      const visual = item.media_type === 'video' && item.url
+        ? `<div class="yearbook-video-visual"><video src="${escapeAttr(item.url)}" muted playsinline preload="metadata" tabindex="-1" aria-hidden="true"></video><span class="yearbook-video-play">▶</span><span class="yearbook-video-label">VIDEO KỶ NIỆM</span></div>`
+        : item.media_type !== 'video' && item.url
+          ? `<img src="${escapeAttr(item.url)}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}" loading="lazy"/>`
+          : `<span class="yearbook-missing-visual">${item.media_type === 'video' ? '🎞️' : '📷'}<small>Không tải được bản xem trước</small></span>`;
+      return `<article class="yearbook-polaroid" style="--tilt:${tilt}deg;--paper-accent:${accent}"><span class="yearbook-tape" aria-hidden="true"></span><button type="button" class="yearbook-media-button" data-action="yearbook-view-media" data-media-id="${escapeAttr(item.id)}" aria-label="Mở ${item.media_type === 'video' ? 'video' : 'ảnh'}: ${escapeAttr(caption)}">${visual}<span class="yearbook-zoom-hint" aria-hidden="true">↗</span></button><div class="yearbook-polaroid-copy"><span class="yearbook-date-note">${escapeHTML(date)}</span><strong class="yearbook-event-note">${escapeHTML(event)}</strong><p>${escapeHTML(caption)}</p><small class="yearbook-signed">— ${escapeHTML(displayName(owner))}</small></div></article>`;
+    }).join('') : `<div class="yearbook-page-empty"><span>✿</span><strong>Chỗ này còn để trống nè</strong><p>Khi A5 đăng thêm kỷ niệm, những tấm ảnh mới sẽ được dán vào đây.</p></div>`;
+    return `<section class="yearbook-page yearbook-page-${side}${isMobile ? ' yearbook-page-single' : ''}" aria-label="Trang ${pageNumber}"><div class="yearbook-page-topline"><span>✿ A5 · NHỮNG ĐIỀU MÌNH MUỐN NHỚ</span><span>${String(pageNumber).padStart(2, '0')}</span></div><div class="yearbook-page-items">${content}</div><div class="yearbook-page-footer"><span>ghi lại để một ngày mỉm cười ♡</span><span>${pageNumber}</span></div></section>`;
+  }
+
+  function renderYearbook() {
+    const renderGeneration = ++yearbookRenderGeneration;
+    renderYearbookCover();
+    if (!yearbookOpened) return;
+    const spread = $('#yearbookSpread');
+    if (!Array.isArray(yearbookMediaCache)) {
+      if (spread) spread.innerHTML = `<div class="yearbook-loading-page"><span>✿</span><strong>${yearbookLoading ? 'Đang gom kỷ niệm của cả lớp...' : 'Sắp mở cuốn lưu bút...'}</strong><p>Ảnh/video không bị sao chép hay di chuyển; cuốn sổ chỉ sắp xếp lại những kỷ niệm đã đăng.</p></div>`;
+      $('#yearbookSpreadTitle').textContent = 'Đang chuẩn bị cuốn sổ';
+      $('#yearbookPageInfo').textContent = '✿';
+      if ($('#yearbookPrev')) $('#yearbookPrev').disabled = true;
+      if ($('#yearbookNext')) $('#yearbookNext').disabled = true;
+      return;
+    }
+    const isMobile = yearbookIsMobile();
+    const perSpread = yearbookItemsPerSpread();
+    // Read like a printed book: older memories appear first, recent ones toward the back.
+    const chronological = [...yearbookMediaCache].sort((a, b) => {
+      const dateDiff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      return dateDiff || String(a.id).localeCompare(String(b.id));
+    });
+    const totalSpreads = Math.max(1, Math.ceil(chronological.length / perSpread));
+    yearbookSpreadIndex = Math.max(0, Math.min(yearbookSpreadIndex, totalSpreads - 1));
+    const start = yearbookSpreadIndex * perSpread;
+    const leftRaw = chronological.slice(start, start + 2);
+    const rightRaw = isMobile ? [] : chronological.slice(start + 2, start + 4);
+    const visibleRaw = [...leftRaw, ...rightRaw];
+    const itemsWithUrls = visibleRaw.map(item => ({ ...item, url: yearbookSignedUrls.has(item.id) ? (yearbookSignedUrls.get(item.id) || '') : (item.url || '') }));
+    const leftItems = itemsWithUrls.slice(0, 2);
+    const rightItems = isMobile ? [] : itemsWithUrls.slice(2, 4);
+    const pageLeft = isMobile ? yearbookSpreadIndex + 1 : yearbookSpreadIndex * 2 + 1;
+    const pageRight = pageLeft + 1;
+    if (spread) {
+      spread.className = `yearbook-spread${isMobile ? ' is-mobile' : ''}`;
+      spread.innerHTML = renderYearbookPage(leftItems, 'left', pageLeft, isMobile, start) + (isMobile ? '' : renderYearbookPage(rightItems, 'right', pageRight, false, start + 2));
+    }
+    const countText = chronological.length ? `${chronological.length} kỷ niệm · xếp từ cũ đến mới` : 'Chưa có kỷ niệm để dán vào sổ';
+    $('#yearbookSpreadTitle').textContent = yearbookSpreadIndex === 0 ? 'Những ngày đầu tiên' : `Những trang tiếp theo · ${countText}`;
+    $('#yearbookPageInfo').textContent = isMobile
+      ? `Trang ${yearbookSpreadIndex + 1} / ${totalSpreads}`
+      : `Trang ${pageLeft}–${pageRight} / ${Math.max(2, totalSpreads * 2)}`;
+    const prev = $('#yearbookPrev'), next = $('#yearbookNext');
+    if (prev) prev.disabled = yearbookTurning || yearbookSpreadIndex <= 0;
+    if (next) next.disabled = yearbookTurning || yearbookSpreadIndex >= totalSpreads - 1;
+    const footer = $('.yearbook-reading-footer');
+    if (footer) footer.innerHTML = `<span>✿ ${escapeHTML(countText)}</span><span>${isMobile ? 'Chạm ảnh để xem lớn · dùng mũi tên để lật trang' : 'Nhấp ảnh để xem lớn · dùng mũi tên để lật trang'} ♡</span>`;
+
+    // Make signed URLs only for the visible spread, rather than downloading/signing every file at once.
+    const unresolved = visibleRaw.filter(item => item.storage_path && !yearbookSignedUrls.has(item.id));
+    if (unresolved.length && supabase) {
+      Promise.all(unresolved.map(async item => [item.id, await resolveSignedUrl(MEDIA_BUCKET, item.storage_path)]))
+        .then(results => {
+          if (renderGeneration !== yearbookRenderGeneration || !yearbookOpened) return;
+          results.forEach(([id, url]) => yearbookSignedUrls.set(id, url || ''));
+          if (!yearbookTurning) renderYearbook();
+        })
+        .catch(error => console.warn('Yearbook media URLs could not be prepared:', error));
+    }
+  }
+
+  async function loadYearbookData() {
+    if (!supabase || !currentUser || yearbookLoading || Array.isArray(yearbookMediaCache)) return;
+    yearbookLoading = true;
+    const requestGeneration = ++yearbookLoadGeneration;
+    renderYearbook();
+    const pageSize = 200;
+    const maxItems = 5000;
+    let offset = 0;
+    const allItems = [];
+    try {
+      while (offset < maxItems) {
+        const end = Math.min(offset + pageSize - 1, maxItems - 1);
+        const { data, error } = await supabase.from('media_items')
+          .select('id,user_id,media_type,storage_path,caption,note_color,note_font,album_name,created_at,updated_at')
+          .order('created_at', { ascending: false }).order('id', { ascending: false })
+          .range(offset, end);
+        if (error) throw error;
+        const rows = data || [];
+        allItems.push(...rows);
+        if (rows.length < pageSize) break;
+        offset += rows.length;
+      }
+      if (requestGeneration !== yearbookLoadGeneration) return;
+      yearbookMediaCache = allItems;
+      if (allItems.length >= maxItems) toast('Cuốn kỷ yếu đang hiển thị 5.000 kỷ niệm gần đây nhất để giữ trang chạy mượt.', 'info', 6000);
+    } catch (error) {
+      if (requestGeneration !== yearbookLoadGeneration) return;
+      console.error('Yearbook load failed:', error);
+      yearbookMediaCache = [...mediaItems];
+      toast('Chưa tải được toàn bộ cuốn kỷ yếu; tạm dùng những kỷ niệm đã có trong album.', 'error', 6000);
+    } finally {
+      if (requestGeneration === yearbookLoadGeneration) {
+        yearbookLoading = false;
+        renderYearbook();
+      }
+    }
+  }
+
+  function turnYearbookPage(direction) {
+    if (!yearbookOpened || yearbookTurning) return;
+    const totalSpreads = Math.max(1, Math.ceil(mediaItems.length / yearbookItemsPerSpread()));
+    const nextIndex = yearbookSpreadIndex + direction;
+    if (nextIndex < 0 || nextIndex >= totalSpreads) return;
+    yearbookTurning = true;
+    const spread = $('#yearbookSpread');
+    const animationClass = direction > 0 ? 'turn-forward' : 'turn-backward';
+    spread?.classList.remove('turn-forward', 'turn-backward');
+    spread?.classList.add(animationClass);
+    window.setTimeout(() => {
+      yearbookSpreadIndex = nextIndex;
+      renderYearbook();
+      const currentSpread = $('#yearbookSpread');
+      if (currentSpread) {
+        currentSpread.classList.remove('turn-forward', 'turn-backward');
+        void currentSpread.offsetWidth;
+        currentSpread.classList.add(animationClass);
+      }
+      window.setTimeout(() => {
+        $('#yearbookSpread')?.classList.remove('turn-forward', 'turn-backward');
+        yearbookTurning = false;
+        renderYearbook();
+      }, 650);
+    }, 170);
+  }
+
   function renderAll() {
     populateMonthFilters();
-    renderProfile(); renderHomeMedia(); renderGallery(); renderPeople(); renderOnThisDay(); renderNotificationBadge(); updateActiveTab();
+    renderProfile(); renderHomeMedia(); renderGallery(); renderPeople(); renderOnThisDay(); renderNotificationBadge(); renderYearbook(); updateActiveTab();
+    if (activeTab === 'yearbook' && yearbookOpened && !Array.isArray(yearbookMediaCache) && !yearbookLoading) void loadYearbookData();
   }
   function switchTab(tab) {
-    if (!['home', 'gallery', 'people', 'profile'].includes(tab)) return;
+    if (!['home', 'gallery', 'yearbook', 'people', 'profile'].includes(tab)) return;
     activeTab = tab;
     updateActiveTab();
     if (tab === 'gallery') renderGallery();
+    if (tab === 'yearbook') { renderYearbook(); if (yearbookOpened) void loadYearbookData(); }
     if (tab === 'people') renderPeople();
     if (tab === 'profile') renderProfile();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   function updateActiveTab() {
-    const names = { home: 'Trang chủ', gallery: 'Album kỷ niệm', people: 'Thành viên A5', profile: 'Góc của tớ' };
+    const names = { home: 'Trang chủ', gallery: 'Album kỷ niệm', yearbook: 'Cuốn kỷ yếu', people: 'Thành viên A5', profile: 'Góc của tớ' };
     $$('.page-view').forEach(page => page.classList.toggle('active', page.id === `page-${activeTab}`));
     $$('[data-tab]').forEach(item => item.classList.toggle('active', item.dataset.tab === activeTab));
     $('#breadcrumbCurrent').textContent = names[activeTab] || names.home;
@@ -951,7 +1134,7 @@
   }
 
   async function downloadMedia(mediaId, button) {
-    const item = mediaItems.find(entry => entry.id === mediaId);
+    const item = findMediaItem(mediaId);
     if (!item?.storage_path || !supabase) return toast('Chưa có đường dẫn tải tệp. Hãy tải lại album.', 'error');
     const originalHtml = button.innerHTML;
     button.disabled = true; button.innerHTML = '<span aria-hidden="true">…</span> Đang chuẩn bị';
@@ -1286,7 +1469,7 @@
   }
 
   async function openComments(mediaId) {
-    const item = mediaItems.find(media => media.id === mediaId);
+    const item = findMediaItem(mediaId);
     if (!item) return toast('Không tìm thấy kỷ niệm này.', 'error');
     activeCommentsMediaId = mediaId;
     editingCommentId = null;
@@ -1314,7 +1497,7 @@
         .select('id,media_id,user_id,body,created_at,updated_at,profiles(id,display_name,nickname,avatar_path)')
         .eq('media_id', mediaId).order('created_at', { ascending: true }).limit(300);
       if (error) throw error;
-      const item = mediaItems.find(media => media.id === mediaId);
+      const item = findMediaItem(mediaId);
       const canModerate = item?.user_id === currentUser.id;
       const rows = data || [];
       commentCounts.set(mediaId, rows.length);
@@ -1394,7 +1577,7 @@
   }
 
   function openMediaViewer(mediaId) {
-    const item = mediaItems.find(entry => entry.id === mediaId);
+    const item = findMediaItem(mediaId);
     if (!item) return toast('Không tìm thấy kỷ niệm này.', 'error');
     if (!item.url) return toast('Chưa tải được tệp xem trước. Hãy tải lại album rồi thử lại.', 'error');
     activeViewerMediaId = mediaId;
@@ -1414,7 +1597,7 @@
     if (video) video.play().catch(() => {});
   }
   function openReportModal(mediaId) {
-    const item = mediaItems.find(entry => entry.id === mediaId);
+    const item = findMediaItem(mediaId);
     if (!item) return toast('Không tìm thấy nội dung cần báo cáo.', 'error');
     if (item.user_id === currentUser?.id) return toast('Cậu không cần báo cáo bài đăng của chính mình.', 'info');
     $('#reportMediaId').value = mediaId;
@@ -1473,7 +1656,7 @@
     } catch (error) { console.error('Reaction error:', error); toast('Chưa gửi được cảm xúc. Cậu thử lại nhé.', 'error'); }
   }
   function openReactions(mediaId, emojiFilter = '') {
-    const item = mediaItems.find(media => media.id === mediaId);
+    const item = findMediaItem(mediaId);
     const all = reactionItems.filter(reaction => reaction.media_id === mediaId && (!emojiFilter || reaction.emoji === emojiFilter)).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     $('#reactionModalTitle').textContent = emojiFilter ? `Ai đã thả ${emojiFilter}?` : 'Ai đã gửi cảm xúc? ♡';
     $('#reactionList').innerHTML = all.length ? all.map(reaction => {
@@ -1519,6 +1702,26 @@
   }
 
   function bindEvents() {
+    if (window.matchMedia) {
+      const bookBreakpoint = window.matchMedia('(max-width: 760px)');
+      const handleBookBreakpoint = () => { if (activeTab === 'yearbook' && yearbookOpened) renderYearbook(); };
+      if (typeof bookBreakpoint.addEventListener === 'function') bookBreakpoint.addEventListener('change', handleBookBreakpoint);
+      else if (typeof bookBreakpoint.addListener === 'function') bookBreakpoint.addListener(handleBookBreakpoint);
+    }
+    $('#yearbookSpread')?.addEventListener('touchstart', event => {
+      if (!yearbookOpened || event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      yearbookTouchStart = { x: touch.clientX, y: touch.clientY };
+    }, { passive: true });
+    $('#yearbookSpread')?.addEventListener('touchend', event => {
+      if (!yearbookTouchStart || !yearbookOpened) { yearbookTouchStart = null; return; }
+      const touch = event.changedTouches?.[0];
+      if (!touch) { yearbookTouchStart = null; return; }
+      const dx = touch.clientX - yearbookTouchStart.x;
+      const dy = touch.clientY - yearbookTouchStart.y;
+      yearbookTouchStart = null;
+      if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.25) turnYearbookPage(dx < 0 ? 1 : -1);
+    }, { passive: true });
     $('#googleLogin')?.addEventListener('click', () => signIn('google'));
     $('#facebookLogin')?.addEventListener('click', () => signIn('facebook'));
     $('#logoutButton')?.addEventListener('click', signOut);
@@ -1600,6 +1803,11 @@
       const action = actionButton.dataset.action;
       if (action === 'upload-photo') openUpload('photo');
       else if (action === 'upload-video') openUpload('video');
+      else if (action === 'open-yearbook') { yearbookOpened = true; yearbookSpreadIndex = 0; switchTab('yearbook'); renderYearbook(); }
+      else if (action === 'close-yearbook') { yearbookOpened = false; yearbookTurning = false; renderYearbook(); }
+      else if (action === 'yearbook-next') turnYearbookPage(1);
+      else if (action === 'yearbook-prev') turnYearbookPage(-1);
+      else if (action === 'yearbook-view-media') openMediaViewer(actionButton.dataset.mediaId);
       else if (action === 'edit-profile') openProfileEditor();
       else if (action === 'close-modal') closeModals();
       else if (action === 'edit-media') openEditMedia(actionButton.dataset.mediaId);
@@ -1633,6 +1841,13 @@
       }
       if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-action="open-viewer"][role="button"]')) {
         event.preventDefault(); openMediaViewer(event.target.dataset.mediaId);
+      }
+      if (activeTab === 'yearbook' && yearbookOpened && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        const tag = event.target?.tagName;
+        if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) {
+          if (event.key === 'ArrowRight') { event.preventDefault(); turnYearbookPage(1); }
+          else if (event.key === 'ArrowLeft') { event.preventDefault(); turnYearbookPage(-1); }
+        }
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault(); $('#globalSearch')?.focus();
