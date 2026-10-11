@@ -807,7 +807,7 @@
       const bio = profile.bio || 'đang viết tiếp câu chuyện thanh xuân...';
       const dream = profile.dream_job ? `<p class="person-dream-teaser">✨ Mơ ước: ${escapeHTML(profile.dream_job)}</p>` : '';
       const seat = classroomSeats.find(entry => entry.user_id === profile.id);
-      return `<article class="person-card" data-action="view-profile" data-user-id="${escapeAttr(profile.id)}" tabindex="0" role="button" style="--person-tint:${tint[index % tint.length]};animation-delay:${Math.min(index * 30, 240)}ms"><div class="person-avatar">${profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện ${escapeAttr(displayName(profile))}" loading="lazy"/>` : shortInitial(displayName(profile))}</div><h3>${escapeHTML(displayName(profile))}</h3><p class="person-nickname">${escapeHTML(profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5')}</p><p class="person-bio">${escapeHTML(bio)}</p>${dream}${seat ? `<span class="person-seat-tag">🪑 Dãy ${escapeHTML(seat.row_code)} · Bàn ${String(seat.desk_number).padStart(2, '0')} · Chỗ ${seat.seat_number}</span>` : ''}<div class="person-statline"><span>▧ <b>${ownMedia.filter(item => item.media_type === 'photo').length}</b> ảnh</span><span>▷ <b>${ownMedia.filter(item => item.media_type === 'video').length}</b> video</span></div><span class="person-view-button">Ghé thăm góc nhỏ ↗</span></article>`;
+      return `<article class="person-card" data-action="view-profile" data-user-id="${escapeAttr(profile.id)}" tabindex="0" role="button" style="--person-tint:${tint[index % tint.length]};animation-delay:${Math.min(index * 30, 240)}ms"><div class="person-avatar">${profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện ${escapeAttr(displayName(profile))}" loading="lazy"/>` : shortInitial(displayName(profile))}</div><h3>${escapeHTML(displayName(profile))}</h3><p class="person-nickname">${escapeHTML(profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5')}</p><p class="person-bio">${escapeHTML(bio)}</p>${dream}${seat ? `<span class="person-seat-tag">🪑 Khu ${escapeHTML(seat.row_code)} · Bàn ${String(seat.desk_number).padStart(2, '0')} · Chỗ ${seat.seat_number}</span>` : ''}<div class="person-statline"><span>▧ <b>${ownMedia.filter(item => item.media_type === 'photo').length}</b> ảnh</span><span>▷ <b>${ownMedia.filter(item => item.media_type === 'video').length}</b> video</span></div><span class="person-view-button">Ghé thăm góc nhỏ ↗</span></article>`;
     }).join('');
     $('#peopleEmpty').classList.toggle('hidden', people.length !== 0);
     $('#peopleGrid').classList.toggle('hidden', people.length === 0);
@@ -855,7 +855,7 @@
       ? `<img src="${escapeAttr(profile.avatar_url)}" alt="" loading="lazy"/>`
       : (profile ? shortInitial(name) : (own ? '♡' : '+'));
     const seatClass = `classroom-seat ${occupied ? 'is-occupied' : ''} ${own ? 'is-own-seat' : ''} ${!seat.user_id ? 'is-empty-seat' : ''} ${context === 'picker' ? 'seat-picker-choice' : ''}`;
-    const label = `Dãy ${seat.row_code}, bàn ${seat.desk_number}, chỗ ${seat.seat_number}: ${name}`;
+    const label = `Khu ${seat.row_code}, bàn ${seat.desk_number}, chỗ ${seat.seat_number}: ${name}`;
     const disabled = context === 'picker' && occupied ? 'disabled' : '';
     const userData = occupied ? `data-user-id="${escapeAttr(seat.user_id)}"` : '';
     const seatData = action === 'choose-seat' || action === 'current-seat' ? `data-seat-code="${escapeAttr(seat.seat_code)}"` : '';
@@ -882,12 +882,12 @@
     const own = currentClassroomSeat();
     const bottomNote = $('.classroom-bottom-note p');
     if (bottomNote) bottomNote.textContent = own
-      ? `Cậu đang ngồi ở Dãy ${own.row_code} · Bàn ${String(own.desk_number).padStart(2, '0')} · Chỗ ${own.seat_number}. Muốn đổi chỗ thì bấm nút bên cạnh nhé ♡`
+      ? `Cậu đang ngồi ở Khu ${own.row_code} · Bàn ${String(own.desk_number).padStart(2, '0')} · Chỗ ${own.seat_number}. Muốn đổi chỗ thì bấm nút bên cạnh nhé ♡`
       : 'Chọn một chỗ còn trống để đặt chỗ của mình. Cậu có thể đổi chỗ sau này ♡';
     target.innerHTML = ['A', 'B'].map(rowCode => {
       const rowSeats = classroomSeats.filter(seat => seat.row_code === rowCode);
       const deskNumbers = [...new Set(rowSeats.map(seat => seat.desk_number))].sort((a, b) => a - b);
-      return `<section class="classroom-aisle"><div class="classroom-aisle-heading"><span class="aisle-letter">${rowCode}</span><div><strong>Dãy ${rowCode}</strong><small>7 bàn · 4 chỗ mỗi bàn</small></div></div><div class="classroom-desk-grid">${deskNumbers.map(deskNumber => classroomDeskMarkup(rowCode, deskNumber, 'room')).join('')}</div></section>`;
+      return `<section class="classroom-aisle"><div class="classroom-aisle-heading"><span class="aisle-letter">${rowCode}</span><div><strong>Khu ${rowCode}</strong><small>7 bàn dài · 4 chỗ cùng hàng</small></div></div><div class="classroom-desk-grid">${deskNumbers.map(deskNumber => classroomDeskMarkup(rowCode, deskNumber, 'room')).join('')}</div></section>`;
     }).join('');
   }
 
@@ -900,12 +900,12 @@
     }
     target.innerHTML = ['A', 'B'].map(rowCode => {
       const deskNumbers = [...new Set(classroomSeats.filter(seat => seat.row_code === rowCode).map(seat => seat.desk_number))].sort((a, b) => a - b);
-      return `<section class="seat-picker-aisle"><h3>Dãy ${rowCode}</h3><div class="seat-picker-desk-grid">${deskNumbers.map(deskNumber => classroomDeskMarkup(rowCode, deskNumber, 'picker')).join('')}</div></section>`;
+      return `<section class="seat-picker-aisle"><h3>Khu ${rowCode}</h3><div class="seat-picker-desk-grid">${deskNumbers.map(deskNumber => classroomDeskMarkup(rowCode, deskNumber, 'picker')).join('')}</div></section>`;
     }).join('');
     const own = currentClassroomSeat();
     const description = $('#seatSelectionDescription');
     if (description) description.textContent = own
-      ? `Cậu đang ở Dãy ${own.row_code}, bàn ${own.desk_number}, chỗ ${own.seat_number}. Chọn chỗ trống khác nếu muốn đổi chỗ. Chỗ đã có bạn sẽ bị khóa.`
+      ? `Cậu đang ở Khu ${own.row_code}, bàn ${own.desk_number}, chỗ ${own.seat_number}. Chọn chỗ trống khác nếu muốn đổi chỗ. Chỗ đã có bạn sẽ bị khóa.`
       : 'Chọn một chỗ còn trống trong phòng học. Mỗi chỗ chỉ dành cho một tài khoản; cậu có thể đổi chỗ sau này.';
   }
 
@@ -983,7 +983,7 @@
     if (seat.user_id && seat.user_id !== currentUser.id) return toast('Chỗ này đã có bạn chọn rồi. Cậu chọn chỗ trống khác nhé.', 'info');
     const previous = currentClassroomSeat();
     if (previous?.seat_code === seatCode) { closeModals(); return toast('Đây đang là chỗ ngồi của cậu rồi ♡', 'info'); }
-    if (previous && !window.confirm(`Cậu đang ngồi Dãy ${previous.row_code}, bàn ${previous.desk_number}, chỗ ${previous.seat_number}. Chuyển sang chỗ mới nhé?`)) return;
+    if (previous && !window.confirm(`Cậu đang ngồi Khu ${previous.row_code}, bàn ${previous.desk_number}, chỗ ${previous.seat_number}. Chuyển sang chỗ mới nhé?`)) return;
     seatSaving = true;
     try {
       const { error } = await supabase.rpc('choose_classroom_seat', { p_seat_code: seatCode });

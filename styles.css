@@ -457,7 +457,8 @@ button.public-profile-photo:focus-visible,.media-visual-open:focus-visible,.on-t
 .classroom-aisle-heading>div{display:grid;gap:2px;min-width:0}
 .classroom-aisle-heading strong{font-size:12px;color:#815b71}
 .classroom-aisle-heading small{font-size:8px;color:#ad96a4}
-.classroom-desk-grid,.seat-picker-desk-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;min-width:0}
+/* Each zone is a vertical sequence of long desks; each desk has four seats in one horizontal row. */
+.classroom-desk-grid,.seat-picker-desk-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;min-width:0}
 .classroom-desk{min-width:0;padding:7px 6px 8px;border:1px solid #f1e5e9;border-radius:13px;background:#fff;box-shadow:0 3px 8px #7e5b6c08;transition:transform .18s,border-color .18s,box-shadow .18s}
 .classroom-desk:hover{border-color:#e8c5d3;box-shadow:0 5px 13px #8d617710;transform:translateY(-1px)}
 .classroom-seat-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;min-width:0;align-items:stretch}.classroom-seat-row .classroom-seat{min-width:0}
