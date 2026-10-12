@@ -22,6 +22,14 @@
   const MEDIA_BUCKET = 'memory-media';
   const AVATAR_BUCKET = 'profile-avatars';
 
+  // Profile memory archive: query one small page at a time, rather than trying to
+  // render every post owned by a member in the profile UI.
+  const PROFILE_ARCHIVE_PAGE_SIZE = 12;
+  const PROFILE_ARCHIVE_MEDIA_FIELDS = 'id,user_id,media_type,storage_path,caption,note_color,note_font,album_name,created_at,updated_at';
+  const profileArchiveStates = new Map();
+  const profileArchiveItemsById = new Map();
+  let publicProfileUserId = null;
+
   let supabase = null;
   let currentUser = null;
   let currentProfile = null;
@@ -303,9 +311,11 @@
   function shortInitial(name) { const text = String(name || 'A5').trim(); return escapeHTML(text ? [...text][0].toUpperCase() : 'A'); }
   function displayName(profile) { return profile?.display_name || profile?.nickname || 'Bạn A5'; }
   function findMediaItem(mediaId) {
-    const feedItem = mediaItems.find(item => item.id === mediaId);
+    const feedItem = mediaItems.find(item => String(item.id) === String(mediaId));
     if (feedItem) return feedItem;
-    const bookItem = Array.isArray(yearbookMediaCache) ? yearbookMediaCache.find(item => item.id === mediaId) : null;
+    const archiveItem = profileArchiveItemsById.get(String(mediaId));
+    if (archiveItem) return archiveItem;
+    const bookItem = Array.isArray(yearbookMediaCache) ? yearbookMediaCache.find(item => String(item.id) === String(mediaId)) : null;
     if (!bookItem) return null;
     return { ...bookItem, url: yearbookSignedUrls.get(bookItem.id) || bookItem.url || '' };
   }
@@ -585,7 +595,7 @@
         window.setTimeout(() => {
           if (event === 'SIGNED_OUT') {
             stopA5RealtimeSubscriptions();
-            currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; classroomSeats = []; classroomFeatureAvailable = false; classOfficerAssignments = []; officersFeatureAvailable = false; isA5SiteAdmin = false; seatPromptShownForUserId = null; lastUserId = null;
+            currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; classroomSeats = []; classroomFeatureAvailable = false; classOfficerAssignments = []; officersFeatureAvailable = false; isA5SiteAdmin = false; seatPromptShownForUserId = null; lastUserId = null; profileArchiveStates.clear(); profileArchiveItemsById.clear(); publicProfileUserId = null;
             yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookOpened = false; yearbookSpreadIndex = 0;
             showAuthScreen();
           } else if (session?.user) {
@@ -652,7 +662,7 @@
     const { error } = await supabase.auth.signOut();
     if (button) button.disabled = false;
     if (error) { console.error(error); toast('Chưa đăng xuất được. Thử lại nhé.', 'error'); return; }
-    currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; classroomSeats = []; classroomFeatureAvailable = false; classOfficerAssignments = []; officersFeatureAvailable = false; isA5SiteAdmin = false; seatPromptShownForUserId = null; lastUserId = null;
+    currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; classroomSeats = []; classroomFeatureAvailable = false; classOfficerAssignments = []; officersFeatureAvailable = false; isA5SiteAdmin = false; seatPromptShownForUserId = null; lastUserId = null; profileArchiveStates.clear(); profileArchiveItemsById.clear(); publicProfileUserId = null;
     yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookOpened = false; yearbookSpreadIndex = 0;
     signedUrlCache.clear(); showAuthScreen(); toast('Hẹn gặp cậu ở cuốn lưu bút nhé ♡', 'success');
   }
@@ -1845,6 +1855,278 @@
     } finally { seatSaving = false; }
   }
 
+  function profileArchiveKey(mode, userId) { return `${mode}:${userId}`; }
+  function getProfileArchiveState(mode, userId) {
+    const key = profileArchiveKey(mode, userId);
+    if (!profileArchiveStates.has(key)) {
+      profileArchiveStates.set(key, {
+        mode, userId, view: 'preview', page: 0, items: [], totalCount: null,
+        photoCount: null, videoCount: null, countsLoading: false, countsAttempted: false,
+        loading: false, initialized: false, requestToken: 0
+      });
+    }
+    return profileArchiveStates.get(key);
+  }
+
+  function profileArchiveControlsElement(mode) {
+    const id = mode === 'own' ? 'profileArchiveControlsOwn' : 'profileArchiveControlsPublic';
+    let controls = document.getElementById(id);
+    if (controls) return controls;
+    const grid = $(mode === 'own' ? '#profileMediaGrid' : '#publicProfilePhotos');
+    if (!grid) return null;
+    controls = document.createElement('section');
+    controls.id = id;
+    controls.className = 'profile-archive-controls';
+    controls.setAttribute('aria-live', 'polite');
+    grid.insertAdjacentElement('afterend', controls);
+    return controls;
+  }
+
+  function updateProfileArchiveCounts(mode, userId, state) {
+    if (mode === 'own' && currentUser?.id === userId) {
+      if (state.photoCount !== null) $('#myPhotoCount').textContent = String(state.photoCount);
+      if (state.videoCount !== null) $('#myVideoCount').textContent = String(state.videoCount);
+    } else if (mode === 'public' && publicProfileUserId === userId) {
+      if (state.photoCount !== null) $('#publicPhotoCount').textContent = String(state.photoCount);
+      if (state.videoCount !== null) $('#publicVideoCount').textContent = String(state.videoCount);
+    }
+  }
+
+  function updateProfileArchiveControls(mode, userId) {
+    // The public-profile modal has one shared control row; ignore late responses
+    // from a previously viewed member so they cannot replace the current buttons.
+    if (mode === 'public' && publicProfileUserId && publicProfileUserId !== userId && !$('#publicProfileModal')?.classList.contains('hidden')) return;
+    const state = getProfileArchiveState(mode, userId);
+    const controls = profileArchiveControlsElement(mode);
+    if (!controls) return;
+    const anyKnown = state.totalCount !== null ? state.totalCount > 0 :
+      (state.photoCount !== null || state.videoCount !== null
+        ? ((state.photoCount || 0) + (state.videoCount || 0) > 0)
+        : true);
+    controls.classList.toggle('hidden', !anyKnown && state.countsAttempted && !state.loading);
+    if (state.loading && !state.items.length && state.view === 'archive') {
+      controls.innerHTML = `<div class="profile-archive-status"><span class="profile-archive-flower" aria-hidden="true">✿</span><span>Đang xếp lại những kỷ niệm nhỏ...</span></div>`;
+      return;
+    }
+    const stats = `${state.photoCount === null ? '…' : state.photoCount} ảnh · ${state.videoCount === null ? '…' : state.videoCount} video`;
+    if (state.view !== 'archive') {
+      controls.innerHTML = `<div class="profile-archive-preview-row"><span class="profile-archive-summary"><span aria-hidden="true">🌷</span> ${stats}</span><button class="profile-archive-button" type="button" data-action="open-profile-archive" data-profile-archive-mode="${mode}" data-user-id="${escapeAttr(userId)}">Xem tất cả kỷ niệm <span aria-hidden="true">↗</span></button></div>`;
+      return;
+    }
+    const total = Number.isFinite(state.totalCount) ? state.totalCount : state.items.length;
+    const start = total ? state.page * PROFILE_ARCHIVE_PAGE_SIZE + 1 : 0;
+    const end = Math.min((state.page + 1) * PROFILE_ARCHIVE_PAGE_SIZE, total);
+    const older = end < total;
+    controls.innerHTML = `<div class="profile-archive-pager"><div class="profile-archive-pager-copy"><strong>Những mảnh ghép thanh xuân ♡</strong><span>Đang xem ${start}–${end} / ${total} kỷ niệm · ${stats}</span></div><div class="profile-archive-pager-actions"><button class="profile-archive-button is-secondary" type="button" data-action="profile-archive-page" data-profile-archive-mode="${mode}" data-user-id="${escapeAttr(userId)}" data-page="${state.page - 1}" ${state.page <= 0 || state.loading ? 'disabled' : ''}>← Mới hơn</button><button class="profile-archive-button" type="button" data-action="profile-archive-page" data-profile-archive-mode="${mode}" data-user-id="${escapeAttr(userId)}" data-page="${state.page + 1}" ${!older || state.loading ? 'disabled' : ''}>${state.loading ? 'Đang xếp...' : (older ? 'Cũ hơn →' : 'Đã xem hết ♡')}</button></div><button class="profile-archive-back" type="button" data-action="profile-archive-preview" data-profile-archive-mode="${mode}" data-user-id="${escapeAttr(userId)}">← Trở lại xem trước</button></div>`;
+  }
+
+  function maybeLoadProfileArchiveWhenCacheMiss(mode, userId, state = getProfileArchiveState(mode, userId)) {
+    if (!state.countsAttempted || state.loading || state.view !== 'preview') return;
+    if (((state.photoCount || 0) + (state.videoCount || 0)) <= 0) return;
+    if (mediaItems.some(item => String(item.user_id) === String(userId))) return;
+    const visible = mode === 'own'
+      ? currentUser?.id === userId && activeTab === 'profile'
+      : publicProfileUserId === userId && !$('#publicProfileModal')?.classList.contains('hidden');
+    if (visible) void loadProfileArchivePage(mode, userId, 0);
+  }
+
+  async function loadProfileArchiveCounts(mode, userId) {
+    if (!supabase || !userId) return;
+    const state = getProfileArchiveState(mode, userId);
+    if (state.countsLoading || state.countsAttempted) return;
+    state.countsLoading = true;
+    updateProfileArchiveControls(mode, userId);
+    try {
+      const [photoResult, videoResult] = await Promise.all([
+        supabase.from('media_items').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('media_type', 'photo'),
+        supabase.from('media_items').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('media_type', 'video')
+      ]);
+      if (photoResult.error) throw photoResult.error;
+      if (videoResult.error) throw videoResult.error;
+      state.photoCount = Number.isFinite(photoResult.count) ? photoResult.count : null;
+      state.videoCount = Number.isFinite(videoResult.count) ? videoResult.count : null;
+      state.countsAttempted = true;
+      updateProfileArchiveCounts(mode, userId, state);
+      const knownTotal = (state.photoCount || 0) + (state.videoCount || 0);
+      const hasRecentMedia = mediaItems.some(item => String(item.user_id) === String(userId));
+      const profileIsVisible = mode === 'own'
+        ? currentUser?.id === userId && activeTab === 'profile'
+        : publicProfileUserId === userId && !$('#publicProfileModal')?.classList.contains('hidden');
+      // The global feed intentionally keeps only recent posts. If a member's
+      // posts are older than that feed window, fetch one small archive page so
+      // the profile does not look empty when it is not.
+      if (profileIsVisible && knownTotal > 0 && !hasRecentMedia && state.view === 'preview' && !state.loading) {
+        void loadProfileArchivePage(mode, userId, 0);
+      } else if (mode === 'own' && currentUser?.id === userId && activeTab === 'profile' && knownTotal === 0) {
+        $('#profileMediaGrid')?.classList.add('hidden');
+        $('#profileMediaEmpty')?.classList.remove('hidden');
+      }
+    } catch (error) {
+      state.countsAttempted = true;
+      console.warn('A5 profile media count could not be confirmed:', error?.message || error);
+    } finally {
+      state.countsLoading = false;
+      updateProfileArchiveControls(mode, userId);
+      maybeLoadProfileArchiveWhenCacheMiss(mode, userId, state);
+    }
+  }
+
+  function profileArchiveTileHTML(item, index) {
+    const owner = profiles.find(profile => profile.id === item.user_id) || item.profiles || {};
+    const isVideo = item.media_type === 'video';
+    const visual = item.url
+      ? (isVideo
+        ? '<span class="profile-archive-video"><span aria-hidden="true">▶</span><small>VIDEO</small></span>'
+        : `<img src="${escapeAttr(item.url)}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}" loading="lazy" decoding="async" fetchpriority="low"/>`)
+      : `<span class="profile-archive-fallback" aria-hidden="true">${isVideo ? '▷' : '✿'}</span>`;
+    const caption = item.caption || (isVideo ? 'Một đoạn thanh xuân ♡' : 'Một ngày đáng nhớ ♡');
+    return `<button type="button" class="profile-archive-tile" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở kỷ niệm: ${escapeAttr(caption)}" style="--archive-order:${Math.min(index, 7)}"><span class="profile-archive-tile-media">${visual}<span class="profile-archive-tile-sticker" aria-hidden="true">${index % 3 === 0 ? '✿' : (index % 3 === 1 ? '♡' : '✦')}</span></span><span class="profile-archive-tile-copy"><strong>${escapeHTML(caption)}</strong><small>${escapeHTML(formatDate(item.created_at, false))}</small></span></button>`;
+  }
+
+  function renderProfileArchiveTiles(mode, userId, state) {
+    const grid = $(mode === 'own' ? '#profileMediaGrid' : '#publicProfilePhotos');
+    if (!grid) return;
+    const pageSignature = `${userId}:${state.page}:${state.items.map(item => item.id).join(',')}`;
+    grid.classList.add('profile-archive-tiles');
+    grid.classList.toggle('profile-archive-tiles-public', mode === 'public');
+    if (grid.dataset.profileArchiveSignature !== pageSignature) {
+      grid.innerHTML = state.items.map(profileArchiveTileHTML).join('');
+      grid.dataset.profileArchiveSignature = pageSignature;
+    }
+    grid.classList.toggle('hidden', state.items.length === 0);
+    if (mode === 'own') {
+      const empty = $('#profileMediaEmpty');
+      const noItems = state.initialized && state.totalCount === 0;
+      empty?.classList.toggle('hidden', !noItems);
+    }
+  }
+
+  function renderOwnProfileMemories(mine, state) {
+    const grid = $('#profileMediaGrid');
+    const empty = $('#profileMediaEmpty');
+    if (!grid) return;
+    if (state.view === 'archive' && state.initialized) {
+      renderProfileArchiveTiles('own', currentUser.id, state);
+    } else {
+      grid.classList.remove('profile-archive-tiles', 'profile-archive-tiles-public');
+      delete grid.dataset.profileArchiveSignature;
+      renderMediaGridInPlace(grid, mine.slice(0, 6));
+      const hasAny = (state.totalCount !== null ? state.totalCount > 0 : mine.length > 0) || state.loading;
+      empty?.classList.toggle('hidden', hasAny);
+      grid.classList.toggle('hidden', mine.length === 0 && !state.loading);
+    }
+    updateProfileArchiveControls('own', currentUser.id);
+    void loadProfileArchiveCounts('own', currentUser.id);
+    maybeLoadProfileArchiveWhenCacheMiss('own', currentUser.id, state);
+  }
+
+  async function loadProfileArchivePage(mode, userId, page) {
+    if (!supabase || !userId) return toast('Hãy đăng nhập để mở kho kỷ niệm nhé.', 'info');
+    const state = getProfileArchiveState(mode, userId);
+    if (state.loading) return;
+    const safePage = Math.max(0, Number.isFinite(page) ? Math.floor(page) : 0);
+    if (safePage > 0 && state.totalCount !== null && safePage * PROFILE_ARCHIVE_PAGE_SIZE >= state.totalCount) return;
+    state.loading = true;
+    state.view = 'archive';
+    const token = ++state.requestToken;
+    updateProfileArchiveControls(mode, userId);
+    try {
+      const start = safePage * PROFILE_ARCHIVE_PAGE_SIZE;
+      const { data, error, count } = await supabase.from('media_items')
+        .select(PROFILE_ARCHIVE_MEDIA_FIELDS, { count: 'exact' })
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false }).order('id', { ascending: false })
+        .range(start, start + PROFILE_ARCHIVE_PAGE_SIZE - 1);
+      if (error) throw error;
+      const rows = data || [];
+      const urlMap = await resolveSignedUrls(MEDIA_BUCKET, rows.map(item => item.storage_path));
+      if (token !== state.requestToken) return;
+      // Keep just the current archive page in the lightweight media lookup cache.
+      state.items.forEach(old => {
+        if (!mediaItems.some(item => String(item.id) === String(old.id))) profileArchiveItemsById.delete(String(old.id));
+      });
+      state.items = rows.map(item => ({
+        ...item,
+        url: urlMap.get(item.storage_path) || '',
+        profiles: profiles.find(profile => profile.id === item.user_id) || null,
+        reactions: []
+      }));
+      state.items.forEach(item => profileArchiveItemsById.set(String(item.id), item));
+      state.totalCount = Number.isFinite(count) ? count : (state.totalCount ?? start + rows.length);
+      state.page = safePage;
+      state.initialized = true;
+      state.loading = false;
+      if (state.page > 0 && rows.length === 0) {
+        state.page = Math.max(0, state.page - 1);
+        toast('Đây là cuối kho kỷ niệm rồi nha ♡', 'info');
+        return await loadProfileArchivePage(mode, userId, state.page);
+      }
+      if (!state.countsAttempted) void loadProfileArchiveCounts(mode, userId);
+      if (mode === 'own' && currentUser?.id === userId) {
+        renderProfileArchiveTiles('own', userId, state);
+      } else if (mode === 'public' && publicProfileUserId === userId) {
+        renderProfileArchiveTiles('public', userId, state);
+      }
+      updateProfileArchiveControls(mode, userId);
+      if (!state.totalCount) toast('Góc kỷ niệm này còn đang chờ những khoảnh khắc đầu tiên ♡', 'info');
+    } catch (error) {
+      if (token !== state.requestToken) return;
+      console.error('Profile archive page failed:', error);
+      state.loading = false;
+      if (!state.initialized) state.view = 'preview';
+      updateProfileArchiveControls(mode, userId);
+      toast('Chưa tải được kho kỷ niệm. Cậu thử lại sau nhé.', 'error', 4500);
+    } finally {
+      if (token === state.requestToken) {
+        state.loading = false;
+        updateProfileArchiveControls(mode, userId);
+      }
+    }
+  }
+
+  function openProfileArchive(mode, userId) {
+    const state = getProfileArchiveState(mode, userId);
+    state.view = 'archive';
+    return loadProfileArchivePage(mode, userId, 0);
+  }
+
+  function showProfileArchivePreview(mode, userId) {
+    const state = getProfileArchiveState(mode, userId);
+    const currentCachedItems = mediaItems.filter(item => String(item.user_id) === String(userId));
+    const knownTotal = state.totalCount !== null ? state.totalCount : ((state.photoCount || 0) + (state.videoCount || 0));
+    // If the global feed window has none of this member's records, stay in the
+    // paged archive instead of returning to an empty preview.
+    if (!currentCachedItems.length && knownTotal > 0) {
+      state.view = 'archive';
+      if (state.initialized) renderProfileArchiveTiles(mode, userId, state);
+      else void loadProfileArchivePage(mode, userId, 0);
+      updateProfileArchiveControls(mode, userId);
+      return;
+    }
+    state.view = 'preview';
+    if (mode === 'own' && currentUser?.id === userId) {
+      const mine = currentCachedItems;
+      const grid = $('#profileMediaGrid');
+      grid.classList.remove('profile-archive-tiles', 'profile-archive-tiles-public');
+      delete grid.dataset.profileArchiveSignature;
+      renderMediaGridInPlace(grid, mine.slice(0, 6));
+      grid.classList.toggle('hidden', mine.length === 0 && state.totalCount === 0);
+      $('#profileMediaEmpty')?.classList.toggle('hidden', (state.totalCount ?? mine.length) !== 0);
+    } else if (mode === 'public' && publicProfileUserId === userId) {
+      const own = currentCachedItems;
+      const photos = own.slice(0, 8);
+      const grid = $('#publicProfilePhotos');
+      grid.classList.remove('profile-archive-tiles', 'profile-archive-tiles-public');
+      delete grid.dataset.profileArchiveSignature;
+      grid.innerHTML = photos.map(item => item.url ? (item.media_type === 'video'
+        ? `<button type="button" class="public-profile-photo video-thumb" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở video kỷ niệm"><span class="media-video-placeholder" aria-hidden="true"><span>▶</span><small>VIDEO</small></span></button>`
+        : `<button type="button" class="public-profile-photo" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở ảnh kỷ niệm"><img src="${escapeAttr(item.url)}" alt="Kỷ niệm" loading="lazy" decoding="async"/></button>`)
+        : '<div class="public-profile-photo">✿</div>').join('');
+      grid.classList.toggle('hidden', photos.length === 0);
+    }
+    updateProfileArchiveControls(mode, userId);
+  }
+
   function renderProfile() {
     if (!currentProfile || !currentUser) return;
     const profile = currentProfile;
@@ -1866,13 +2148,12 @@
     setProviderStatus('facebook', providers.has('facebook'));
     $('#memberSince').textContent = formatDate(profile.created_at, false);
     const mine = mediaItems.filter(item => item.user_id === currentUser.id);
-    $('#myPhotoCount').textContent = mine.filter(item => item.media_type === 'photo').length;
-    $('#myVideoCount').textContent = mine.filter(item => item.media_type === 'video').length;
+    const archiveState = getProfileArchiveState('own', currentUser.id);
+    $('#myPhotoCount').textContent = archiveState.photoCount === null ? mine.filter(item => item.media_type === 'photo').length : archiveState.photoCount;
+    $('#myVideoCount').textContent = archiveState.videoCount === null ? mine.filter(item => item.media_type === 'video').length : archiveState.videoCount;
     const myIds = new Set(mine.map(item => item.id));
     $('#myReactionCount').textContent = reactionItems.filter(reaction => myIds.has(reaction.media_id) && reaction.user_id !== currentUser.id).length;
-    renderMediaGridInPlace($('#profileMediaGrid'), mine.slice(0, 6));
-    $('#profileMediaEmpty').classList.toggle('hidden', mine.length !== 0);
-    $('#profileMediaGrid').classList.toggle('hidden', mine.length === 0);
+    renderOwnProfileMemories(mine, archiveState);
   }
   function setProviderStatus(provider, connected) {
     const title = provider === 'google' ? 'googleStatus' : 'facebookStatus';
@@ -3014,7 +3295,7 @@
   }
   async function deleteComment(commentId) {
     if (!supabase || !currentUser) return;
-    const item = mediaItems.find(media => media.id === activeCommentsMediaId);
+    const item = findMediaItem(activeCommentsMediaId);
     const { data: row, error: readError } = await supabase.from('media_comments').select('id,user_id').eq('id', commentId).maybeSingle();
     if (readError) return toast('Chưa kiểm tra được quyền xóa bình luận.', 'error');
     if (!row || (row.user_id !== currentUser.id && item?.user_id !== currentUser.id)) return toast('Cậu không có quyền xóa bình luận này.', 'error');
@@ -3139,6 +3420,10 @@
   function openPublicProfile(id) {
     const profile = profiles.find(person => person.id === id);
     if (!profile) return toast('Chưa tìm được hồ sơ của bạn ấy.', 'error');
+    publicProfileUserId = id;
+    const archiveState = getProfileArchiveState('public', id);
+    if (archiveState.loading) { archiveState.requestToken += 1; archiveState.loading = false; }
+    archiveState.view = 'preview';
     const own = mediaItems.filter(item => item.user_id === id);
     $('#publicProfileAvatar').innerHTML = profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(displayName(profile));
     $('#publicProfileCover').style.background = `linear-gradient(115deg, ${safeColor(profile.profile_color || '#f6dce5')}, #fff0de 70%, #ece5ff)`;
@@ -3149,15 +3434,21 @@
     $('#publicDreamHobbies').textContent = profile.hobbies || 'Chưa chia sẻ';
     $('#publicFutureWishes').textContent = profile.future_wishes || 'Chưa chia sẻ';
     $('#publicDreamCard').classList.toggle('public-dream-empty', !profile.dream_job && !profile.hobbies && !profile.future_wishes);
-    $('#publicPhotoCount').textContent = own.filter(item => item.media_type === 'photo').length;
-    $('#publicVideoCount').textContent = own.filter(item => item.media_type === 'video').length;
+    $('#publicPhotoCount').textContent = archiveState.photoCount === null ? own.filter(item => item.media_type === 'photo').length : archiveState.photoCount;
+    $('#publicVideoCount').textContent = archiveState.videoCount === null ? own.filter(item => item.media_type === 'video').length : archiveState.videoCount;
     $('#publicMemberSince').textContent = formatMonth(profile.created_at);
     const providers = new Set(profile.linked_providers || []);
     $('#publicProviders').innerHTML = `<span class="provider-chip ${providers.has('google') ? 'connected' : ''}">${providers.has('google') ? '✓ ' : ''}Google ${providers.has('google') ? 'đã liên kết' : 'chưa liên kết'}</span><span class="provider-chip ${providers.has('facebook') ? 'connected' : ''}">${providers.has('facebook') ? '✓ ' : ''}Facebook ${providers.has('facebook') ? 'đã liên kết' : 'chưa liên kết'}</span>`;
     const photos = own.slice(0, 8);
-    $('#publicProfilePhotos').innerHTML = photos.map(item => item.url ? (item.media_type === 'video' ? `<button type="button" class="public-profile-photo video-thumb" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở video kỷ niệm"><span class="media-video-placeholder" aria-hidden="true"><span>▶</span><small>VIDEO</small></span></button>` : `<button type="button" class="public-profile-photo" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở ảnh kỷ niệm"><img src="${escapeAttr(item.url)}" alt="Kỷ niệm" loading="lazy" decoding="async"/></button>`) : '<div class="public-profile-photo">✿</div>').join('');
-    $('#publicProfilePhotos').classList.toggle('hidden', photos.length === 0);
+    const publicGrid = $('#publicProfilePhotos');
+    publicGrid.classList.remove('profile-archive-tiles', 'profile-archive-tiles-public');
+    delete publicGrid.dataset.profileArchiveSignature;
+    publicGrid.innerHTML = photos.map(item => item.url ? (item.media_type === 'video' ? `<button type="button" class="public-profile-photo video-thumb" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở video kỷ niệm"><span class="media-video-placeholder" aria-hidden="true"><span>▶</span><small>VIDEO</small></span></button>` : `<button type="button" class="public-profile-photo" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở ảnh kỷ niệm"><img src="${escapeAttr(item.url)}" alt="Kỷ niệm" loading="lazy" decoding="async"/></button>`) : '<div class="public-profile-photo">✿</div>').join('');
+    publicGrid.classList.toggle('hidden', photos.length === 0);
+    updateProfileArchiveControls('public', id);
     openModal('publicProfileModal');
+    void loadProfileArchiveCounts('public', id);
+    maybeLoadProfileArchiveWhenCacheMiss('public', id, archiveState);
   }
 
   async function linkProvider(provider) {
@@ -3321,6 +3612,9 @@
       else if (action === 'delete-comment') await deleteComment(actionButton.dataset.commentId);
       else if (action === 'preview-profile') openPublicProfile(currentUser?.id);
       else if (action === 'view-profile') openPublicProfile(actionButton.dataset.userId);
+      else if (action === 'open-profile-archive') await openProfileArchive(actionButton.dataset.profileArchiveMode, actionButton.dataset.userId);
+      else if (action === 'profile-archive-page') await loadProfileArchivePage(actionButton.dataset.profileArchiveMode, actionButton.dataset.userId, Number(actionButton.dataset.page));
+      else if (action === 'profile-archive-preview') showProfileArchivePreview(actionButton.dataset.profileArchiveMode, actionButton.dataset.userId);
       else if (action === 'link-google') await linkProvider('google');
       else if (action === 'link-facebook') await linkProvider('facebook');
     });
