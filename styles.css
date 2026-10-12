@@ -2659,3 +2659,172 @@ textarea:focus-visible, select:focus-visible, [tabindex]:focus-visible {
   .a5-wish-tree-section *, .yearbook-cover-inner:before,.yearbook-cover-inner:after,.yearbook-cover-corner-one,.yearbook-cover-corner-two,.yearbook-cover-emblem i{animation:none!important;scroll-behavior:auto!important;transition:none!important}
 }
 
+
+/* --------------------------------------------------------------------------
+   A5 Wish Tree + Yearbook Motion v1.1
+   Falling leaves are decorative and limited; mobile tree collapses to a clear,
+   non-obstructive invitation. Yearbook details use short transform/opacity motion.
+--------------------------------------------------------------------------- */
+.a5-wish-fall-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.a5-wish-falling-leaf {
+  position: absolute;
+  top: -22px;
+  left: var(--fall-start, 20%);
+  display: block;
+  color: #78a56f;
+  font-size: var(--fall-size, 17px);
+  line-height: 1;
+  opacity: 0;
+  text-shadow: 0 2px 4px rgba(74, 111, 72, .11);
+  pointer-events: none;
+  animation: a5WishPetalFall var(--fall-duration, 11s) linear var(--fall-delay, 0s) infinite;
+}
+.a5-wish-falling-leaf-one { --fall-start: 14%; --fall-drift: 34px; --fall-end: 7px; --fall-size: 18px; --fall-duration: 12s; --fall-delay: -6s; }
+.a5-wish-falling-leaf-two { --fall-start: 38%; --fall-drift: -23px; --fall-end: 21px; --fall-size: 15px; --fall-duration: 10.7s; --fall-delay: -2.5s; color: #d8a76d; }
+.a5-wish-falling-leaf-three { --fall-start: 72%; --fall-drift: 27px; --fall-end: -19px; --fall-size: 16px; --fall-duration: 13.2s; --fall-delay: -8s; color: #87ae7b; }
+.a5-wish-falling-leaf-four { --fall-start: 89%; --fall-drift: -28px; --fall-end: 8px; --fall-size: 13px; --fall-duration: 11.5s; --fall-delay: -4s; color: #d994ad; }
+@keyframes a5WishPetalFall {
+  0% { opacity: 0; transform: translate3d(0, -10px, 0) rotate(-18deg) scale(.82); }
+  9% { opacity: .78; }
+  47% { opacity: .72; transform: translate3d(var(--fall-drift), 174px, 0) rotate(142deg) scale(1); }
+  86% { opacity: .58; }
+  100% { opacity: 0; transform: translate3d(var(--fall-end), var(--fall-distance, 420px), 0) rotate(305deg) scale(.84); }
+}
+
+.a5-wish-mobile-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 43px;
+  padding: 10px 14px;
+  border: 1px solid rgba(212, 228, 195, .95);
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fffdf4, #f1f7e9 62%, #fff4f6);
+  color: #66815c;
+  box-shadow: 0 3px 0 rgba(210, 226, 192, .9), 0 7px 14px rgba(108, 139, 105, .07);
+  font: 900 12px/1.25 "Nunito", sans-serif;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+.a5-wish-mobile-toggle-icon { font-size: 17px; }
+.a5-wish-mobile-toggle-arrow { margin-left: auto; font-size: 20px; line-height: .8; transition: transform .18s ease; }
+.a5-wish-tree-section.a5-wish-mobile-expanded .a5-wish-mobile-toggle-arrow { transform: rotate(180deg); }
+.a5-wish-mobile-toggle:active { transform: translateY(1px) scale(.99); box-shadow: 0 1px 0 rgba(210, 226, 192, .9); }
+@keyframes a5WishMobileTreeExpand {
+  from { opacity: .45; transform: translate3d(0, 7px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+/* The paper opens with only two visible photos on phones; show a tiny reveal as
+   the current page is rendered. Desktop can stagger up to four, not the whole album. */
+.yearbook-polaroid { animation: a5YearbookPhotoReveal .32s cubic-bezier(.2, .72, .22, 1) both; }
+.yearbook-polaroid:nth-child(1) { animation-delay: .015s; }
+.yearbook-polaroid:nth-child(2) { animation-delay: .065s; }
+.yearbook-polaroid:nth-child(3) { animation-delay: .11s; }
+.yearbook-polaroid:nth-child(4) { animation-delay: .15s; }
+@keyframes a5YearbookPhotoReveal {
+  from { opacity: .22; transform: translate3d(0, 7px, 0) rotate(var(--tilt)) scale(.985); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) rotate(var(--tilt)) scale(1); }
+}
+.yearbook-page-topline span:first-child::before {
+  content: "✦";
+  display: inline-block;
+  margin-right: 5px;
+  color: #d99db2;
+  transform-origin: center;
+  animation: a5YearbookTinyTwinkle 3.8s ease-in-out infinite;
+}
+.yearbook-page-footer span:first-child::after { content: "  ✧"; color: #c98ca3; }
+.yearbook-polaroid::after {
+  content: "✧";
+  position: absolute;
+  z-index: 3;
+  top: 18px;
+  right: 8px;
+  color: var(--paper-accent, #d99db2);
+  font: 12px/1 Georgia, serif;
+  opacity: .72;
+  pointer-events: none;
+  transform: rotate(10deg);
+}
+.yearbook-cover-emblem i { position: relative; }
+.yearbook-cover-emblem i::after {
+  content: "✦";
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  color: #fff0cb;
+  font: 13px/1 Georgia, serif;
+  opacity: .78;
+  pointer-events: none;
+  animation: a5YearbookTinyTwinkle 4.6s ease-in-out infinite;
+}
+@keyframes a5YearbookTinyTwinkle {
+  0%, 100% { opacity: .45; transform: rotate(-8deg) scale(.88); }
+  50% { opacity: .95; transform: rotate(12deg) scale(1.08); }
+}
+@keyframes a5BookCoverOrnament {
+  0%, 100% { opacity: .48; transform: translate3d(0, 0, 0) rotate(-4deg) scale(.96); }
+  50% { opacity: .94; transform: translate3d(0, -6px, 0) rotate(8deg) scale(1.08); }
+}
+.yearbook-cover-inner::before { animation: a5BookCoverOrnament 6.4s ease-in-out infinite; }
+.yearbook-cover-inner::after { animation: a5BookCoverOrnament 8.1s ease-in-out -2.6s infinite reverse; }
+
+@media (max-width: 760px), (hover: none), (pointer: coarse) {
+  /* A compact invitation stays visible in the home feed. The tree opens only
+     after a deliberate tap, so it won't push every other class memory away. */
+  .a5-wish-heading { flex-wrap: wrap; align-items: center; }
+  .a5-wish-heading > div:first-child { flex: 1 1 calc(100% - 66px); min-width: 0; }
+  .a5-wish-mobile-toggle { display: flex; width: 100%; }
+  .a5-wish-tree-section:not(.a5-wish-mobile-expanded) .a5-wish-layout { display: none; }
+  .a5-wish-tree-section.a5-wish-mobile-expanded .a5-wish-layout {
+    display: grid;
+    animation: a5WishMobileTreeExpand .24s ease-out both;
+  }
+  .a5-wish-tree-section:not(.a5-wish-mobile-expanded) .a5-wish-heading { margin-bottom: 0; }
+  .a5-wish-scene { --fall-distance: 378px; }
+  .a5-wish-falling-leaf-four { display: none; }
+  .a5-wish-falling-leaf { font-size: calc(var(--fall-size, 16px) - 1px); }
+  /* Keep the cover lively with a small touch response. Only the two visible
+     scrapbook photos are given a very short entrance animation. */
+  .yearbook-cover { transition: transform .15s ease; }
+  .yearbook-cover:active { transform: translate3d(0, 1px, 0) scale(.995); }
+  .yearbook-cover-inner::before { animation-duration: 8s; }
+  .yearbook-cover-inner::after { animation-duration: 9.5s; }
+  .yearbook-cover-emblem i { animation: a5BookHeartGlow 7s ease-in-out infinite; }
+  .yearbook-cover-corner-one { animation: a5BookDoodleFloat 9s ease-in-out infinite; }
+  .yearbook-cover-corner-two { animation: a5BookDoodleFloat 10s ease-in-out -3s infinite reverse; }
+  .yearbook-polaroid { animation: a5YearbookPhotoReveal .24s cubic-bezier(.2, .72, .22, 1) both !important; }
+  .yearbook-polaroid:nth-child(1) { animation-delay: .015s !important; }
+  .yearbook-polaroid:nth-child(2) { animation-delay: .075s !important; }
+  .yearbook-polaroid:nth-child(n+3) { animation: none !important; }
+}
+@media (max-width: 420px) {
+  .a5-wish-falling-leaf-three { display: none; }
+  .a5-wish-scene { --fall-distance: 368px; }
+  .a5-wish-mobile-toggle { min-height: 45px; font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .a5-wish-falling-leaf,
+  .a5-wish-tree-section .a5-wish-mobile-toggle-arrow,
+  .yearbook-polaroid,
+  .yearbook-page-topline span:first-child::before,
+  .yearbook-cover-emblem i::after,
+  .yearbook-cover-inner::before,
+  .yearbook-cover-inner::after,
+  .yearbook-cover-emblem i,
+  .yearbook-cover-corner-one,
+  .yearbook-cover-corner-two { animation: none !important; }
+  .a5-wish-mobile-toggle,
+  .yearbook-cover { transition: none !important; }
+  .a5-wish-tree-section.a5-wish-mobile-expanded .a5-wish-layout { animation: none !important; }
+}

@@ -2206,8 +2206,9 @@
             <div class="a5-wish-heading">
               <div><span class="section-overline">PLANT A LITTLE HOPE · A5</span><h2 id="a5WishTreeTitle">Cây điều ước <span aria-hidden="true">🌿</span></h2><p>Mỗi chiếc lá là một điều mong ước của tụi mình. Chạm vào chiếc lá để đọc nhé.</p></div>
               <div class="a5-wish-count-badge"><strong id="a5WishCount">0</strong><span>điều ước</span></div>
+              <button type="button" class="a5-wish-mobile-toggle" data-action="toggle-wish-tree-mobile" aria-expanded="false" aria-controls="a5WishLayout"><span class="a5-wish-mobile-toggle-icon" aria-hidden="true">🌱</span><span class="a5-wish-mobile-toggle-label">Mở cây điều ước</span><span class="a5-wish-mobile-toggle-arrow" aria-hidden="true">⌄</span></button>
             </div>
-            <div class="a5-wish-layout">
+            <div class="a5-wish-layout" id="a5WishLayout">
               <div class="a5-wish-scene-wrap">
                 <div class="a5-wish-scene" aria-label="Cây điều ước của lớp A5">
                   <span class="a5-wish-sun-doodle" aria-hidden="true">☼</span><span class="a5-wish-cloud a5-wish-cloud-one" aria-hidden="true">☁</span><span class="a5-wish-cloud a5-wish-cloud-two" aria-hidden="true">☁</span>
@@ -2223,6 +2224,7 @@
                     <g fill="#f5d78c" opacity=".9"><circle cx="83" cy="321" r="3"/><circle cx="373" cy="322" r="3"/><circle cx="104" cy="344" r="2"/><circle cx="350" cy="345" r="2"/></g>
                     <g fill="#f8edf2"><circle cx="84" cy="338" r="5"/><circle cx="90" cy="334" r="5"/><circle cx="90" cy="342" r="5"/><circle cx="84" cy="342" r="5"/><circle cx="87" cy="339" r="3" fill="#e4b85e"/><circle cx="367" cy="340" r="5"/><circle cx="373" cy="336" r="5"/><circle cx="373" cy="344" r="5"/><circle cx="367" cy="344" r="5"/><circle cx="370" cy="341" r="3" fill="#e4b85e"/></g>
                   </svg>
+                  <div class="a5-wish-fall-layer" aria-hidden="true"><span class="a5-wish-falling-leaf a5-wish-falling-leaf-one">🍃</span><span class="a5-wish-falling-leaf a5-wish-falling-leaf-two">🍂</span><span class="a5-wish-falling-leaf a5-wish-falling-leaf-three">🍃</span><span class="a5-wish-falling-leaf a5-wish-falling-leaf-four">✿</span></div>
                   <div class="a5-wish-leaf-layer" id="a5WishLeafLayer" aria-label="Những chiếc lá điều ước" aria-live="polite"><div class="a5-wish-scene-loading">🌱<span>Đang gọi những điều ước...</span></div></div>
                   <div class="a5-wish-scene-caption" aria-hidden="true"><span>✿</span> Gieo một điều lành <span>✿</span></div>
                 </div>
@@ -2342,6 +2344,18 @@
         renderA5WishTree();
       }
     }
+  }
+
+  function toggleA5WishTreeMobile(button) {
+    const section = $('#a5WishTreeSection');
+    if (!section || !button) return;
+    const expanded = !section.classList.contains('a5-wish-mobile-expanded');
+    section.classList.toggle('a5-wish-mobile-expanded', expanded);
+    button.setAttribute('aria-expanded', String(expanded));
+    const label = button.querySelector('.a5-wish-mobile-toggle-label');
+    const arrow = button.querySelector('.a5-wish-mobile-toggle-arrow');
+    if (label) label.textContent = expanded ? 'Thu gọn cây' : 'Mở cây điều ước';
+    if (arrow) arrow.textContent = expanded ? '⌃' : '⌄';
   }
 
   function stopA5WishRealtime() {
@@ -3851,6 +3865,7 @@
       else if (action === 'seat-occupied') toast('Chỗ này đã có bạn ngồi rồi nha.', 'info');
       else if (action === 'upload-photo') openUpload('photo');
       else if (action === 'upload-video') openUpload('video');
+      else if (action === 'toggle-wish-tree-mobile') toggleA5WishTreeMobile(actionButton);
       else if (action === 'open-yearbook') { yearbookOpened = true; yearbookSpreadIndex = 0; switchTab('yearbook'); renderYearbook(); }
       else if (action === 'close-yearbook') { yearbookOpened = false; yearbookTurning = false; renderYearbook(); }
       else if (action === 'yearbook-next') turnYearbookPage(1);
