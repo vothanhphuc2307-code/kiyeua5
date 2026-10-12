@@ -867,3 +867,178 @@ img, video { max-width: 100%; }
 @media (prefers-reduced-motion: reduce) {
   .memory-card, .reaction-row .reaction-pill { animation: none !important; transition: none !important; }
 }
+/* A5 MOTION TOUCH v1.0 — restrained desktop hover + lightweight touch feedback.
+   CSS-only: no new JavaScript, no listeners, no database or Supabase changes. */
+@media (hover: hover) and (pointer: fine) and (min-width: 761px) {
+  /* Use short, consistent easing on the controls people interact with most. */
+  .primary-button:not(:disabled),
+  .outline-button:not(:disabled),
+  .subtle-button:not(:disabled),
+  .text-button:not(:disabled),
+  .social-button:not(:disabled),
+  .nav-item,
+  .filter-pill,
+  .tiny-action,
+  .reaction-pill,
+  .comment-open-button,
+  .video-download-button,
+  .media-download-button,
+  .notification-top-button,
+  .pwa-install-button,
+  .pwa-auth-install,
+  .a5-music-fab,
+  .a5-music-track,
+  .a5-music-close,
+  .a5-music-minimize,
+  .people-mode-button,
+  .report-open-button,
+  .yearbook-open-button,
+  .yearbook-page-button:not(:disabled),
+  .new-member-welcome-choice,
+  .classroom-seat:not(:disabled) {
+    transition-timing-function: cubic-bezier(.2, .75, .25, 1);
+  }
+
+  /* Buttons without a special hover motion get only a 1px lift. */
+  .primary-button:hover:not(:disabled),
+  .outline-button:hover:not(:disabled),
+  .subtle-button:hover:not(:disabled),
+  .social-button:hover:not(:disabled),
+  .nav-item:hover,
+  .filter-pill:hover,
+  .comment-open-button:hover,
+  .video-download-button:hover:not(:disabled),
+  .media-download-button:hover:not(:disabled),
+  .pwa-install-button:hover:not(:disabled),
+  .pwa-auth-install:hover,
+  .a5-music-close:hover,
+  .a5-music-minimize:hover,
+  .people-mode-button:hover,
+  .report-open-button:hover,
+  .classroom-seat:hover:not(:disabled) {
+    transform: translate3d(0, -1px, 0);
+  }
+
+  /* A little tactile response on compact actions; don't make them jump far. */
+  .tiny-action:hover:not(:disabled) { transform: scale(1.045); }
+  .reaction-pill:hover:not(:disabled) { transform: translate3d(0, -1px, 0); }
+}
+
+/* Touch devices do not receive hover animations. A short press feedback replaces them. */
+@media (hover: none), (pointer: coarse) {
+  .primary-button:hover:not(:disabled),
+  .outline-button:hover:not(:disabled),
+  .subtle-button:hover:not(:disabled),
+  .social-button:hover:not(:disabled),
+  .nav-item:hover,
+  .filter-pill:hover,
+  .tiny-action:hover:not(:disabled),
+  .reaction-pill:hover:not(:disabled),
+  .comment-open-button:hover,
+  .video-download-button:hover:not(:disabled),
+  .media-download-button:hover:not(:disabled),
+  .notification-top-button:hover,
+  .pwa-install-button:hover:not(:disabled),
+  .pwa-auth-install:hover,
+  .a5-music-fab:hover,
+  .a5-music-track:hover,
+  .a5-music-close:hover,
+  .a5-music-minimize:hover,
+  .people-mode-button:hover,
+  .report-open-button:hover,
+  .yearbook-open-button:hover,
+  .yearbook-page-button:hover:not(:disabled),
+  .new-member-welcome-choice:hover,
+  .classroom-seat:hover:not(:disabled) {
+    transform: none;
+  }
+
+  button:not(:disabled),
+  a[role="button"],
+  .nav-item,
+  .filter-pill,
+  .memory-card,
+  .person-card,
+  .on-this-day-item,
+  .yearbook-polaroid {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  button:not(:disabled):active,
+  a[role="button"]:active,
+  .nav-item:active,
+  .filter-pill:active,
+  .primary-button:active:not(:disabled),
+  .outline-button:active:not(:disabled),
+  .subtle-button:active:not(:disabled),
+  .social-button:active:not(:disabled),
+  .comment-open-button:active,
+  .video-download-button:active:not(:disabled),
+  .media-download-button:active:not(:disabled),
+  .pwa-install-button:active:not(:disabled),
+  .people-mode-button:active,
+  .report-open-button:active,
+  .yearbook-page-button:active:not(:disabled),
+  .classroom-seat:active:not(:disabled) {
+    transform: scale(.985);
+    transition: transform .12s ease-out;
+  }
+
+  .tiny-action:active:not(:disabled),
+  .reaction-pill:active:not(:disabled) {
+    transform: scale(.94);
+    transition: transform .1s ease-out;
+  }
+
+  .memory-card:active,
+  .person-card:active,
+  .on-this-day-item:active,
+  .yearbook-polaroid:active {
+    transform: scale(.992);
+    transition: transform .12s ease-out;
+  }
+}
+
+/* Small screens: never add extra floating/infinite animation layers. */
+@media (max-width: 760px) {
+  .primary-button,
+  .outline-button,
+  .subtle-button,
+  .social-button,
+  .comment-open-button,
+  .video-download-button,
+  .media-download-button,
+  .pwa-install-button,
+  .a5-music-close,
+  .a5-music-minimize,
+  .people-mode-button,
+  .report-open-button {
+    transition-duration: .14s;
+  }
+}
+
+/* Honor reduced-motion settings for the new interactions too. */
+@media (prefers-reduced-motion: reduce) {
+  .primary-button:hover:not(:disabled),
+  .outline-button:hover:not(:disabled),
+  .subtle-button:hover:not(:disabled),
+  .social-button:hover:not(:disabled),
+  .nav-item:hover,
+  .filter-pill:hover,
+  .tiny-action:hover:not(:disabled),
+  .reaction-pill:hover:not(:disabled),
+  .comment-open-button:hover,
+  .video-download-button:hover:not(:disabled),
+  .media-download-button:hover:not(:disabled),
+  .pwa-install-button:hover:not(:disabled),
+  .pwa-auth-install:hover,
+  .a5-music-close:hover,
+  .a5-music-minimize:hover,
+  .people-mode-button:hover,
+  .report-open-button:hover,
+  .classroom-seat:hover:not(:disabled) {
+    transform: none !important;
+  }
+}
+
