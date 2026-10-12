@@ -1931,3 +1931,663 @@ textarea:focus-visible, select:focus-visible, [tabindex]:focus-visible {
     transition: none !important;
   }
 }
+
+
+/* =====================================================================
+   A5 MOBILE EXPERIENCE v3.0
+   Phone-first refinement. Desktop styles are intentionally untouched.
+   No JS, no external library, no backend/schema changes.
+   ===================================================================== */
+
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
+  :root {
+    --a5-touch: 44px;
+    --a5-mobile-gutter: 15px;
+    --a5-mobile-rose: #b85f7e;
+    --a5-mobile-line: rgba(218, 183, 197, .62);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 76px;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    min-width: 0;
+    min-height: 100dvh;
+    font-size: 14px;
+    background-color: #fffaf7;
+    background-image:
+      radial-gradient(ellipse at 0% 8%, rgba(255, 220, 231, .30), transparent 33%),
+      radial-gradient(ellipse at 100% 35%, rgba(224, 222, 250, .24), transparent 32%),
+      radial-gradient(circle, rgba(195, 145, 167, .16) 1px, transparent 1.6px);
+    background-size: auto, auto, 38px 42px;
+    background-attachment: scroll;
+  }
+
+  /* A quiet paper-like layer instead of lots of animated particles. */
+  .ambient { filter: none; opacity: .18; }
+  .ambient-one { width: 210px; height: 210px; top: -120px; right: -65px; }
+  .ambient-two { width: 170px; height: 170px; bottom: 70px; left: -100px; }
+
+  .app-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-x: clip;
+    background: transparent;
+    animation: none;
+  }
+  .sidebar { display: none !important; }
+  .app-main {
+    width: 100%;
+    min-width: 0;
+    min-height: 100dvh;
+    padding: 0;
+    background: transparent;
+  }
+
+  /* Fixed-feeling app header, but no expensive blur on weaker phones. */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    width: 100%;
+    height: 64px;
+    gap: 8px;
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: max(13px, env(safe-area-inset-left));
+    padding-right: max(13px, env(safe-area-inset-right));
+    border-bottom: 1px solid rgba(236, 216, 224, .92);
+    background: rgba(255, 251, 248, .97);
+    box-shadow: 0 5px 17px rgba(119, 77, 99, .045);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .mobile-brand {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+    color: #6e5266;
+    font-size: 12px;
+    font-weight: 1000;
+    letter-spacing: -.1px;
+    white-space: nowrap;
+  }
+  .mobile-brand .brand-mark {
+    flex: 0 0 36px;
+    width: 36px;
+    height: 36px;
+    border: 1px solid #efd0da;
+    border-radius: 12px 12px 12px 5px;
+    font-size: 15px;
+    box-shadow: 0 3px 8px rgba(182, 95, 126, .11);
+  }
+  .breadcrumbs { display: none; }
+  .topbar-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .search-box {
+    position: relative;
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+    justify-content: center;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid #f0dfe6;
+    border-radius: 13px;
+    background: #fff3f6;
+    color: #a96b82;
+    transition: width .18s ease, background-color .18s ease;
+  }
+  .search-box > span { flex: 0 0 auto; font-size: 21px; }
+  .search-box input {
+    position: absolute;
+    left: 38px;
+    width: 0;
+    min-width: 0;
+    padding: 0;
+    opacity: 0;
+    font-size: 16px;
+    border: 0;
+  }
+  .search-box:focus-within {
+    flex-basis: min(52vw, 220px);
+    width: min(52vw, 220px);
+    justify-content: flex-start;
+    padding: 0 9px;
+    background: #fff;
+  }
+  .search-box:focus-within input {
+    position: static;
+    flex: 1;
+    width: 100%;
+    opacity: 1;
+    padding: 0;
+  }
+  .search-box kbd { display: none; }
+  .notification-top-button,
+  .top-icon-button,
+  .top-avatar {
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+    border-radius: 13px;
+  }
+  .notification-top-button { font-size: 19px; background: #fff6f8; border-color: #f0dfe6; }
+  .top-icon-button { font-size: 24px; box-shadow: 0 4px 10px rgba(194, 109, 139, .15); }
+  .top-avatar { border-radius: 13px; }
+
+  /* Content rhythm, more breathable type, fewer cramped rows. */
+  .page-content {
+    width: 100%;
+    max-width: 760px;
+    margin: 0;
+    padding: 17px var(--a5-mobile-gutter) calc(30px + env(safe-area-inset-bottom));
+  }
+  .page-view { min-width: 0; }
+  .page-view.active { animation: a5MobilePageEnter .20s ease-out both; }
+  @keyframes a5MobilePageEnter {
+    from { opacity: .72; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .page-title-row {
+    display: flex;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 4px 0 18px;
+  }
+  .page-title-row > div:first-child { flex: 1 1 100%; min-width: 0; }
+  .page-title-row h1 {
+    font-size: clamp(23px, 6.3vw, 28px);
+    line-height: 1.18;
+    letter-spacing: -.8px;
+    text-wrap: pretty;
+  }
+  .page-title-row p {
+    max-width: 38ch;
+    margin-top: 8px;
+    color: #8e798a;
+    font-size: 12px;
+    line-height: 1.7;
+  }
+  .section-overline { font-size: 9px; letter-spacing: 1.55px; margin-bottom: 6px; }
+  .title-doodle { display: inline-block; margin-left: 2px; }
+  .title-actions {
+    display: flex;
+    width: 100%;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: stretch;
+    justify-content: flex-start;
+    margin-top: 1px;
+  }
+  .title-actions > button { flex: 0 1 auto; max-width: 100%; white-space: normal; }
+
+  /* Real thumb targets. Avoid transition:all and hover emulation. */
+  .primary-button,
+  .outline-button,
+  .subtle-button,
+  .text-button,
+  .danger-button,
+  .yearbook-open-button {
+    min-height: var(--a5-touch);
+    justify-content: center;
+    gap: 8px;
+    padding: 11px 14px;
+    border-radius: 13px;
+    font-size: 12px;
+    line-height: 1.25;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform .14s ease, box-shadow .14s ease, background-color .14s ease;
+  }
+  .primary-button { box-shadow: 0 4px 0 rgba(164, 81, 109, .10), 0 7px 15px rgba(185, 95, 126, .12); }
+  .outline-button { border-color: #ead8e1; background: rgba(255, 253, 251, .95); }
+  .text-button { padding-inline: 9px; }
+  .filter-pill { flex: 0 0 auto; min-height: 38px; padding: 8px 12px; font-size: 11px; }
+  .sort-select,
+  .month-filter-select,
+  .album-filter-select {
+    min-height: 42px;
+    max-width: 100%;
+    border-radius: 12px;
+    padding: 9px 12px;
+    font-size: 12px;
+  }
+  .top-icon-button:active,
+  .notification-top-button:active,
+  .primary-button:active,
+  .outline-button:active,
+  .subtle-button:active,
+  .text-button:active,
+  .filter-pill:active,
+  .mobile-nav-item:active,
+  .yearbook-page-button:active:not(:disabled) {
+    transform: scale(.975);
+  }
+
+  /* Homepage: clear message first, collage second, actions easy to reach. */
+  .home-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    min-height: 0;
+    padding: 22px 17px 0;
+    border: 1px solid rgba(255,255,255,.94);
+    border-radius: 23px;
+    background: linear-gradient(145deg, #fff0ef 0%, #fff6ee 52%, #f4efff 100%);
+    box-shadow: 0 10px 24px rgba(145, 93, 119, .085), inset 0 1px 0 #fff;
+  }
+  .hero-text { min-width: 0; }
+  .hero-kicker { gap: 7px; font-size: 9px; letter-spacing: 1.25px; }
+  .hero-text h1 {
+    margin: 13px 0 10px;
+    font-size: clamp(25px, 7vw, 30px);
+    line-height: 1.2;
+    letter-spacing: -.9px;
+    text-wrap: balance;
+  }
+  .hero-text > p { max-width: 36ch; font-size: 13px; line-height: 1.7; color: #816f81; }
+  .hero-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 8px;
+    margin-top: 17px;
+  }
+  .hero-actions .primary-button { grid-column: 1 / -1; width: 100%; }
+  .hero-actions .text-button {
+    min-width: 0;
+    min-height: 42px;
+    padding: 9px 7px;
+    border: 1px solid rgba(229, 201, 215, .72);
+    border-radius: 12px;
+    background: rgba(255, 253, 251, .72);
+    font-size: 11px;
+    white-space: normal;
+    text-align: center;
+  }
+  .hero-quickfacts { margin: 15px 0 3px; font-size: 10px; gap: 9px; }
+  .quick-avatars span { width: 25px; height: 25px; }
+  .hero-collage { width: 100%; max-width: 370px; height: 205px; margin: 3px auto 0; }
+  .collage-polaroid { width: min(205px, 68%); top: 5px; left: 25%; padding: 8px 8px 9px; }
+  .collage-scene { height: 145px; }
+  .collage-caption { font-size: 14px; }
+  .collage-tape { width: 63px; height: 19px; left: 46%; }
+  .sticker-a { width: 54px; height: 54px; left: 1%; bottom: 15px; font-size: 13px; }
+  .sticker-b { width: 39px; height: 39px; right: 1%; top: 12px; font-size: 23px; }
+  .scribble-star { font-size: 29px; right: 2%; bottom: 21px; }
+  .collage-note { right: 7%; bottom: 0; font-size: 13px; }
+  .wave { animation: none; }
+
+  .section-heading {
+    align-items: flex-start;
+    gap: 10px;
+    margin: 26px 0 13px;
+  }
+  .section-heading h2 { font-size: 20px; letter-spacing: -.5px; line-height: 1.25; }
+  .section-heading p { max-width: 30ch; font-size: 11px; line-height: 1.6; }
+  .section-heading .subtle-button { flex: 0 0 auto; min-height: 38px; padding: 7px 9px; font-size: 10px; }
+
+  /* Filters can be swiped horizontally instead of wrapping into a tall stack. */
+  .memory-filter-row,
+  .gallery-tools {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 9px;
+    margin: 14px 0;
+    min-width: 0;
+  }
+  .filter-pills {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 7px;
+    max-width: 100%;
+    padding: 1px 1px 5px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .filter-pills::-webkit-scrollbar { display: none; }
+  .memory-filter-right,
+  .gallery-sort-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 100%; }
+  .gallery-sort-group > *, .memory-filter-right > * { min-width: 0; }
+  .sort-select { width: 100%; align-self: stretch; }
+  .gallery-tools { padding: 11px; border: 1px solid rgba(235, 215, 224, .8); border-radius: 15px; background: rgba(255, 253, 251, .78); }
+  .upload-strip { align-items: flex-start; gap: 10px; padding: 13px; border-radius: 16px; }
+  .upload-strip-icon { flex: 0 0 38px; width: 38px; height: 38px; border-radius: 12px; }
+  .upload-strip strong { font-size: 12px; line-height: 1.4; }
+  .upload-strip p { max-width: 35ch; padding-right: 0; font-size: 11px; line-height: 1.6; }
+  .upload-strip-doodle { right: 4px; top: -8px; opacity: .45; font-size: 49px; }
+
+  /* Album: roomy cards, readable captions and reliable reactions. */
+  .media-grid,
+  .gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; margin-top: 13px; }
+  .memory-card {
+    min-width: 0;
+    border-radius: 15px;
+    border-color: #f0e3e8;
+    background: rgba(255, 253, 251, .97);
+    box-shadow: 0 5px 14px rgba(104, 65, 85, .055);
+    animation: none !important;
+    transition: border-color .14s ease, box-shadow .14s ease;
+  }
+  .media-visual { aspect-ratio: 4 / 3; }
+  .media-type-tag { top: 7px; left: 7px; padding: 5px 7px; border-radius: 8px; font-size: 9px; backdrop-filter: none; }
+  .media-owner-actions { top: 6px; right: 6px; gap: 5px; }
+  .tiny-action { width: 34px; height: 34px; border-radius: 10px; font-size: 13px; backdrop-filter: none; }
+  .media-card-body { padding: 10px 10px 11px; }
+  .media-caption { margin-bottom: 8px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+  .media-note { padding: 8px 9px; margin-bottom: 8px; border-radius: 10px; font-size: 11px; line-height: 1.5; }
+  .media-meta { gap: 6px; font-size: 9px; line-height: 1.35; }
+  .media-meta .avatar { flex: 0 0 25px; width: 25px; height: 25px; border-radius: 8px; font-size: 10px; }
+  .media-owner-name { font-size: 9px; }
+  .media-timestamp { font-size: 8px; }
+  .card-divider { margin: 9px 0 8px; }
+  .reaction-row { gap: 5px; min-width: 0; }
+  .reaction-pill { min-height: 30px; padding: 5px 7px; gap: 4px; font-size: 10px; }
+  .reaction-pill .reaction-emoji { font-size: 12px; }
+  .reaction-pill .reaction-count { font-size: 9px; }
+  .react-more { flex: 0 0 30px; width: 30px; height: 30px; }
+  .card-react-prompt { min-height: 32px; min-width: 32px; font-size: 0; }
+  .card-react-prompt:after { font-size: 15px; }
+  .media-card-actions, .memory-card-footer { min-width: 0; }
+  .loading-card { min-height: 150px; border-radius: 16px; }
+  .loading-flower { animation-duration: 5s; }
+  .empty-state { margin-top: 13px; padding: 28px 16px; border-radius: 18px; }
+  .empty-state h3 { font-size: 16px; }
+  .empty-state p { max-width: 34ch; font-size: 12px; line-height: 1.7; }
+  .empty-actions { gap: 8px; }
+  .closing-note { gap: 8px; margin: 25px auto 6px; }
+  .closing-note p { max-width: 29ch; font-size: 12px; line-height: 1.6; }
+
+  /* Classmates: larger touch cards, not tiny desktop tiles squeezed down. */
+  .people-title { align-items: flex-start; }
+  .member-counter { flex: 0 0 auto; padding: 9px 12px; border-radius: 14px; }
+  .member-counter strong { font-size: 23px; }
+  .member-counter span { font-size: 9px; }
+  .people-intro { justify-content: flex-start; margin-bottom: 15px; padding: 12px; gap: 9px; border-radius: 14px; font-size: 11px; line-height: 1.5; }
+  .people-intro p { margin: 0; color: #8f7887; }
+  .people-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+  .person-card { min-width: 0; padding: 17px 11px 13px; border-radius: 16px; box-shadow: 0 5px 14px rgba(104, 65, 85, .055); animation: none !important; }
+  .person-card:before { height: 59px; }
+  .person-avatar { width: 60px; height: 60px; margin-bottom: 10px; border-radius: 19px; }
+  .person-card h3 { font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+  .person-nickname { margin: 4px 0 8px; font-size: 10px; }
+  .person-bio { font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+  .person-statline { gap: 7px; padding-top: 9px; font-size: 9px; }
+  .person-view-button { min-height: 38px; margin-top: 8px; padding: 8px 9px; border-radius: 10px; font-size: 10px; }
+
+  /* Profile: wrap content, avoid clipped names and awkward statistic cards. */
+  .profile-banner { align-items: center; gap: 12px; padding: 18px 15px 22px; border-radius: 21px; }
+  .profile-large-avatar { flex: 0 0 68px; width: 68px; height: 68px; border-radius: 21px; font-size: 27px; }
+  .profile-banner-info { flex: 1 1 0; min-width: 0; }
+  .profile-banner-info h2 { margin: 6px 0 4px; font-size: 21px; line-height: 1.22; overflow-wrap: anywhere; }
+  .profile-banner-info .profile-class-pill { font-size: 8px; }
+  .profile-banner-info > p { font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+  .profile-banner-info .profile-bio { font-size: 11px; }
+  .profile-edit-floating { right: 10px; bottom: 10px; width: 38px; height: 38px; border-radius: 13px; }
+  .doodle-left { right: 16%; top: 8px; font-size: 22px; opacity: .6; }
+  .doodle-right { right: 0; bottom: 0; font-size: 36px; opacity: .45; }
+  .profile-stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 12px 0 17px; }
+  .profile-stat { min-width: 0; min-height: 112px; flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 10px; border-radius: 14px; }
+  .stat-icon { width: 31px; height: 31px; border-radius: 10px; font-size: 16px; }
+  .profile-stat strong { font-size: 21px; }
+  .profile-stat span:last-child { display: block; font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
+  .profile-details-card { padding: 17px 14px; border-radius: 17px; }
+  .details-card-heading { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+  .details-card-heading h3 { font-size: 15px; }
+  .lock-badge { font-size: 9px; }
+  .detail-line { gap: 9px; min-height: 65px; }
+  .detail-line > div { flex: 1 1 auto; min-width: 0; }
+  .detail-line small { font-size: 10px; }
+  .detail-line strong { display: block; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+  .detail-status { max-width: 88px; font-size: 9px; white-space: normal; text-align: center; }
+  .link-account-button { min-height: 36px; padding: 7px 9px; font-size: 10px; }
+  .backup-panel { gap: 11px; padding: 15px; border-radius: 16px; }
+  .backup-panel-copy h3 { font-size: 15px; line-height: 1.35; }
+  .backup-panel-copy p { font-size: 11px; line-height: 1.65; }
+  .backup-panel-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .backup-panel-actions > button { flex: 1 1 135px; }
+  .public-profile-card { width: 100%; max-width: 100%; border-radius: 22px 22px 0 0; }
+  .public-profile-photos { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+
+  /* Yearbook: book fills the phone width; toolbar becomes compact and legible. */
+  #page-yearbook .yearbook-title-row {
+    padding: 17px 15px 20px;
+    border-radius: 19px;
+    margin-bottom: 13px;
+  }
+  #page-yearbook .yearbook-title-row::before { right: -7px; top: -12px; font-size: 72px; opacity: .10; }
+  #page-yearbook .yearbook-title-row::after { right: 10px; bottom: 7px; font-size: 6px; letter-spacing: .8px; }
+  #page-yearbook .yearbook-title-row h1 { font-size: clamp(22px, 6vw, 26px); }
+  #page-yearbook .yearbook-title-row .title-actions { width: 100%; }
+  #page-yearbook .yearbook-intro-note { gap: 10px; margin-bottom: 15px; padding: 12px; border-radius: 15px; }
+  #page-yearbook .yearbook-intro-note p { font-size: 12px; line-height: 1.65; }
+  .yearbook-cover { width: 100%; max-width: 430px; min-height: 0; margin: 15px auto 25px; padding: 9px 9px 9px 18px; border-radius: 10px 19px 19px 10px; box-shadow: 0 13px 27px rgba(118, 68, 91, .19), 0 4px 0 #8d4a60, 0 7px 0 #65344a; }
+  .yearbook-cover:before { inset: 8px 8px 8px 20px; }
+  .yearbook-cover:after { left: 10px; width: 10px; }
+  .yearbook-cover-inner { min-height: clamp(385px, 60dvh, 465px); padding: 26px 14px 23px; }
+  .yearbook-cover-kicker { font-size: 9px; letter-spacing: 1.6px; }
+  .yearbook-cover-emblem { gap: 13px; margin: 18px 0 12px; font-size: 21px; }
+  .yearbook-cover-emblem i { width: 51px; height: 51px; font-size: 23px; }
+  .yearbook-cover-inner h2 { font-size: clamp(26px, 7.5vw, 35px); letter-spacing: .4px; }
+  .yearbook-cover-rule { gap: 7px; margin: 14px 0 13px; font-size: 8px; letter-spacing: 1.2px; }
+  .yearbook-cover-rule span { width: 23px; }
+  .yearbook-cover-inner > p { max-width: 31ch; font-size: 15px; line-height: 1.6; }
+  .yearbook-cover-bottom { gap: 9px; margin-top: 17px; font-size: 8px; line-height: 1.45; }
+  .yearbook-open-button { width: min(100%, 255px); margin-top: 18px; padding: 12px 16px; }
+  .yearbook-reading { padding: 7px; border-radius: 19px; }
+  .yearbook-reading-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; padding: 4px 1px 10px; }
+  .yearbook-back-cover { grid-column: 1 / -1; justify-self: start; min-height: 38px; padding: 8px 11px; font-size: 11px; }
+  .yearbook-reading-status { min-width: 0; padding: 9px 10px; border-radius: 12px; }
+  .yearbook-reading-status strong { display: block; font-size: 12px; line-height: 1.3; overflow-wrap: anywhere; }
+  .yearbook-reading-status small { font-size: 10px; }
+  .yearbook-page-controls { gap: 7px; }
+  .yearbook-page-button { width: 44px; height: 44px; border-radius: 13px; }
+  .yearbook-book-shell { min-width: 0; padding: 7px; border-radius: 16px; box-shadow: 0 9px 20px rgba(87, 55, 47, .14), inset 0 0 0 2px rgba(226, 190, 157, .24); }
+  .yearbook-book-shell::before { inset: 4px; border-radius: 12px; }
+  .yearbook-book-ribbon { right: 7%; width: 14px; height: 46px; filter: none; }
+  .yearbook-spread { min-width: 0; min-height: 0; border-radius: 5px; }
+  .yearbook-spread.is-mobile { min-height: 0; }
+  .yearbook-page, .yearbook-page-single { min-width: 0; min-height: clamp(475px, 70dvh, 550px); padding: 15px 11px 12px; }
+  .yearbook-page::before { inset: 5px; }
+  .yearbook-page::after { bottom: 34px; font-size: 16px; letter-spacing: 3px; }
+  .yearbook-page-topline { gap: 5px; padding: 7px 6px 8px; font-size: 8px; line-height: 1.3; letter-spacing: .5px; }
+  .yearbook-page-items { gap: 13px 8px; padding: 14px 0 12px; align-content: start; }
+  .yearbook-page-items::before { padding: 5px 3px; font-size: 7px; letter-spacing: .65px; }
+  .yearbook-page-items::after { font-size: 11px; line-height: 1.35; }
+  .yearbook-polaroid { width: 100%; min-width: 0; max-width: none; padding: 6px 6px 8px; border-radius: 5px; box-shadow: 0 3px 8px rgba(128, 108, 79, .10), 0 8px 14px rgba(118, 91, 69, .10); }
+  .yearbook-polaroid:nth-child(even) { margin-top: 5px; }
+  .yearbook-media-button { min-height: 0; aspect-ratio: 4 / 3; border-width: 3px; }
+  .yearbook-polaroid-copy { padding: 7px 2px 0; }
+  .yearbook-date-note { font-size: 9px; line-height: 1.4; }
+  .yearbook-event-note { font-size: 10px; line-height: 1.35; overflow-wrap: anywhere; }
+  .yearbook-polaroid-copy p { margin: 5px 0; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; -webkit-line-clamp: 3; }
+  .yearbook-signed { font-size: 9px; }
+  .yearbook-page-footer { gap: 5px; padding-top: 8px; font-size: 9px; line-height: 1.4; }
+  .yearbook-reading-footer { display: flex; flex-direction: column; gap: 5px; margin-top: 9px; padding: 10px; border-radius: 12px; text-align: center; font-size: 10px; line-height: 1.5; }
+
+  /* Forms/sheets: avoid iOS zoom and leave room for the keyboard/safe areas. */
+  .modal-backdrop,
+  .media-viewer-backdrop {
+    padding: 0;
+    align-items: flex-end;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .modal-card {
+    width: 100%;
+    max-width: 100%;
+    max-height: 91dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 22px 22px 0 0;
+    padding: 25px 17px calc(20px + env(safe-area-inset-bottom));
+    animation: a5SheetEnter .20s ease-out both;
+  }
+  @keyframes a5SheetEnter { from { opacity: .7; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  .modal-card h2 { font-size: 21px; line-height: 1.25; }
+  .modal-subtitle { font-size: 11px; line-height: 1.6; }
+  .modal-close { width: 42px; height: 42px; top: 9px; right: 10px; border-radius: 13px; }
+  .form-field > label { font-size: 11px; }
+  .form-field input:not([type=color]),
+  .form-field textarea,
+  .form-field select,
+  input:not([type=checkbox]):not([type=radio]):not([type=color]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+  .form-field input:not([type=color]), .form-field textarea, .form-field select { min-height: 44px; }
+  .dropzone { min-height: 140px; border-radius: 16px; }
+  .upload-type { min-height: 64px; border-radius: 13px; }
+  .editor-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .editor-actions button { flex: 1 1 120px; min-height: 44px; }
+  .media-editor-modal, .crop-editor-modal, .trim-editor-modal { max-height: 91dvh; }
+
+  .media-viewer-backdrop { align-items: center; padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); }
+  .media-viewer-card {
+    width: 100%;
+    max-height: 91dvh;
+    border-radius: 18px;
+    box-shadow: 0 12px 35px rgba(9, 7, 10, .25);
+    animation: a5ViewerEnter .18s ease-out both;
+  }
+  @keyframes a5ViewerEnter { from { opacity: .7; transform: scale(.99); } to { opacity: 1; transform: scale(1); } }
+  .viewer-close { top: 8px; right: 8px; width: 44px; height: 44px; backdrop-filter: none; }
+  .viewer-media-content { min-height: 120px; max-height: 56dvh; overflow: auto; }
+  .viewer-media-content img, .viewer-media-content video { max-height: 56dvh; }
+  .viewer-caption-panel { align-items: stretch; flex-direction: column; gap: 10px; padding: 13px 13px calc(13px + env(safe-area-inset-bottom)); }
+  .viewer-caption-panel h2 { font-size: 15px; }
+  .viewer-caption-panel p { font-size: 12px; line-height: 1.6; }
+  .viewer-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .viewer-actions button { min-height: 42px; padding: 9px 7px; font-size: 11px; }
+
+  /* Bottom navigation: thumb-friendly, safe-area aware, almost opaque. */
+  .mobile-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    gap: 3px;
+    height: calc(70px + env(safe-area-inset-bottom));
+    padding-top: 7px;
+    padding-bottom: calc(7px + env(safe-area-inset-bottom));
+    padding-left: max(7px, env(safe-area-inset-left));
+    padding-right: max(7px, env(safe-area-inset-right));
+    border-top: 1px solid rgba(233, 211, 221, .95);
+    background: rgba(255, 251, 249, .985);
+    box-shadow: 0 -7px 23px rgba(95, 62, 80, .075);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .mobile-nav-item {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 49px;
+    gap: 3px;
+    padding: 5px 2px;
+    border: 1px solid transparent;
+    border-radius: 14px;
+    color: #aa93a3;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color .13s ease, color .13s ease, transform .13s ease;
+  }
+  .mobile-nav-item > span { font-size: 21px; line-height: 1.05; }
+  .mobile-nav-item small { font-size: 9px; font-weight: 900; line-height: 1.15; white-space: nowrap; }
+  .mobile-nav-item.active { border-color: #f1dce5; background: #fff0f4; color: #ab5575; }
+  .mobile-nav-item.active > span { text-shadow: 0 2px 9px rgba(198, 111, 143, .16); }
+  .mobile-add {
+    flex: 0 0 48px;
+    width: 48px;
+    height: 48px;
+    min-height: 48px;
+    padding: 0;
+    margin: -17px 0 0;
+    border: 4px solid #fffaf7;
+    border-radius: 17px;
+    background: linear-gradient(145deg, #cf829b, #b95f7e);
+    box-shadow: 0 5px 0 rgba(154, 73, 101, .12), 0 8px 17px rgba(190, 96, 129, .25);
+    color: #fff;
+    font-size: 27px;
+    line-height: 1;
+    transition: transform .14s ease, box-shadow .14s ease;
+  }
+  .mobile-add:active { transform: scale(.94); box-shadow: 0 3px 9px rgba(190, 96, 129, .18); }
+  .app-footer { padding: 16px 15px calc(98px + env(safe-area-inset-bottom)); gap: 8px; font-size: 8px; letter-spacing: .45px; line-height: 1.6; }
+  .toast-region { left: 12px; right: 12px; bottom: calc(83px + env(safe-area-inset-bottom)); }
+  .toast { min-width: 0; width: 100%; max-width: none; padding: 12px 13px; border-radius: 14px; font-size: 12px; box-shadow: 0 8px 22px rgba(113, 72, 93, .13); }
+
+  /* Keep animation finite and local; never animate all 100s of media cards. */
+  .memory-card, .person-card, .public-profile-photo, .yearbook-polaroid { animation: none !important; }
+  .memory-card:hover, .person-card:hover, .public-profile-photo:hover,
+  .yearbook-polaroid:hover, .yearbook-cover:hover, .yearbook-open-button:hover {
+    transform: none;
+  }
+  .yearbook-zoom-hint { opacity: .88; transition: none; }
+  .media-type-tag, .media-owner-actions, .tiny-action { backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
+@media (max-width: 390px) {
+  .page-content { padding-inline: 12px; }
+  .topbar { gap: 5px; padding-inline: 10px; }
+  .mobile-brand { gap: 6px; font-size: 11px; }
+  .mobile-brand .brand-mark { flex-basis: 34px; width: 34px; height: 34px; }
+  .topbar-actions { gap: 5px; }
+  .notification-top-button, .top-icon-button, .top-avatar { flex-basis: 37px; width: 37px; height: 37px; }
+  .search-box { flex-basis: 37px; width: 37px; height: 37px; }
+  .home-hero { padding-inline: 14px; }
+  .media-grid, .gallery-grid { gap: 8px; }
+  .media-card-body { padding: 8px 8px 9px; }
+  .media-caption { font-size: 11px; }
+  .media-note { font-size: 10px; }
+  .reaction-pill { min-height: 28px; padding: 4px 5px; }
+  .profile-stats-grid { gap: 6px; }
+  .profile-stat { padding: 10px 8px; min-height: 108px; }
+  .profile-stat span:last-child { font-size: 9px; }
+  .mobile-nav { gap: 1px; padding-inline: 5px; }
+  .mobile-nav-item small { font-size: 8px; }
+  .mobile-add { flex-basis: 45px; width: 45px; height: 45px; }
+  .yearbook-cover-inner { min-height: 385px; padding-inline: 10px; }
+  .yearbook-cover-kicker { font-size: 8px; letter-spacing: 1.1px; }
+  .yearbook-cover-inner > p { font-size: 14px; }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .nav-item:hover, .primary-button:hover, .outline-button:hover, .subtle-button:hover,
+  .text-button:hover, .filter-pill:hover, .memory-card:hover, .person-card:hover,
+  .reaction-pill:hover, .yearbook-cover:hover, .yearbook-polaroid:hover,
+  .yearbook-page-button:hover:not(:disabled) {
+    transform: none;
+  }
+  .social-button:hover, .tiny-action:hover, .notification-top-button:hover,
+  .report-open-button:hover, .media-download-button:hover, .video-download-button:hover {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes a5MobilePageEnter { from { opacity: 1; } to { opacity: 1; } }
+  @keyframes a5SheetEnter { from { opacity: 1; } to { opacity: 1; } }
+  @keyframes a5ViewerEnter { from { opacity: 1; } to { opacity: 1; } }
+  .page-view.active, .modal-card, .media-viewer-card { animation: none !important; }
+}
