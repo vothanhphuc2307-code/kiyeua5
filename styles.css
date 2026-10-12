@@ -2591,3 +2591,71 @@ textarea:focus-visible, select:focus-visible, [tabindex]:focus-visible {
   @keyframes a5ViewerEnter { from { opacity: 1; } to { opacity: 1; } }
   .page-view.active, .modal-card, .media-viewer-card { animation: none !important; }
 }
+
+
+/* A5 Wish Tree v1 — shared, accessible, lightweight garden interaction */
+.a5-wish-tree-section{position:relative;margin:26px 0 34px;padding:clamp(16px,2.4vw,28px);overflow:hidden;border:1px solid #e8e3d7;border-radius:25px;background:linear-gradient(135deg,#fffdf5 0%,#f8fbf1 48%,#fff5f7 100%);box-shadow:0 12px 30px rgba(108,139,105,.08)}
+.a5-wish-tree-section:before{content:"✿";position:absolute;right:20px;top:9px;color:#e6b7c5;font-size:27px;opacity:.7;pointer-events:none}
+.a5-wish-heading{position:relative;z-index:1;display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:18px}
+.a5-wish-heading h2{margin:5px 0 5px;color:#536b51;font:800 clamp(22px,2.7vw,31px)/1.15 "Nunito",sans-serif;letter-spacing:-.5px}
+.a5-wish-heading h2 span{display:inline-block;transform-origin:bottom center;animation:a5WishHeaderSway 6.5s ease-in-out infinite}
+.a5-wish-heading p{max-width:610px;margin:0;color:#7e8c78;font:13px/1.65 "Nunito",sans-serif}
+.a5-wish-count-badge{display:flex;flex:0 0 auto;min-width:68px;min-height:68px;flex-direction:column;align-items:center;justify-content:center;gap:1px;border:1px solid #e2eacb;border-radius:22px 22px 22px 8px;background:#f4f8e8;color:#66815c;box-shadow:0 4px 0 #dce7c8}
+.a5-wish-count-badge strong{font:900 23px/1 "Nunito",sans-serif}.a5-wish-count-badge span{font-size:9px;font-weight:800;letter-spacing:.3px}
+.a5-wish-layout{display:grid;grid-template-columns:minmax(0,1.22fr) minmax(265px,.78fr);align-items:stretch;gap:18px}
+.a5-wish-scene-wrap{min-width:0;padding:10px;border:1px solid #e0e8d2;border-radius:21px;background:linear-gradient(150deg,#edf5e3,#f4f6e9 55%,#fff3eb);box-shadow:inset 0 0 0 4px rgba(255,255,255,.55)}
+.a5-wish-scene{position:relative;min-height:380px;isolation:isolate;overflow:hidden;border-radius:16px;background:radial-gradient(ellipse at 50% 45%,rgba(255,255,255,.94),rgba(248,250,231,.55) 48%,rgba(236,244,224,.62));}
+.a5-wish-scene:before,.a5-wish-scene:after{position:absolute;z-index:-1;content:"";border-radius:50%;pointer-events:none}
+.a5-wish-scene:before{width:190px;height:190px;left:calc(50% - 95px);top:50px;background:radial-gradient(circle,rgba(254,239,197,.6),rgba(254,239,197,0) 72%)}
+.a5-wish-scene:after{left:-18px;right:-18px;bottom:10px;height:55px;background:linear-gradient(180deg,rgba(209,226,185,0),rgba(209,226,185,.25))}
+.a5-wish-tree-svg{position:absolute;inset:0;width:100%;height:100%;z-index:0;overflow:visible}
+.a5-wish-sun-doodle{position:absolute;z-index:0;right:14%;top:11%;color:#e9c278;font-size:25px;opacity:.8;animation:a5WishSunGlow 7s ease-in-out infinite}
+.a5-wish-cloud{position:absolute;z-index:0;color:#fff;font-size:26px;opacity:.72;filter:drop-shadow(0 2px 2px rgba(140,166,138,.08));pointer-events:none}
+.a5-wish-cloud-one{left:9%;top:17%;animation:a5WishCloudDrift 12s ease-in-out infinite alternate}.a5-wish-cloud-two{right:9%;top:36%;font-size:20px;animation:a5WishCloudDrift 15s ease-in-out -4s infinite alternate-reverse}
+.a5-wish-leaf-layer{position:absolute;inset:0;z-index:2}
+.a5-wish-leaf{position:absolute;left:var(--wish-x);top:var(--wish-y);display:flex;align-items:center;justify-content:center;gap:1px;width:43px;height:31px;padding:0 4px;border:1px solid rgba(255,255,255,.8);border-radius:72% 12% 72% 12%;transform:translate(-50%,-50%) rotate(var(--wish-rot));color:#fffdf1;background:#8daf86;box-shadow:0 3px 0 rgba(79,117,77,.12),0 5px 9px rgba(69,105,68,.1);font:900 9px/1 "Nunito",sans-serif;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:transform .16s ease,filter .16s ease,box-shadow .16s ease;animation:a5WishLeafSway calc(4.2s + var(--wish-delay)) ease-in-out var(--wish-delay) infinite alternate}
+.a5-wish-leaf:before{position:absolute;content:"";width:1px;height:62%;left:50%;top:20%;background:rgba(255,255,255,.45);transform:rotate(-12deg);pointer-events:none}
+.a5-wish-leaf i{font-style:normal;font-size:9px;opacity:.85}.a5-wish-leaf span{position:relative;z-index:1}
+.wish-leaf-mint{background:linear-gradient(135deg,#a6c89b,#6f9b72)}.wish-leaf-rose{background:linear-gradient(135deg,#eab2c3,#ca819c)}.wish-leaf-lilac{background:linear-gradient(135deg,#c5b8df,#9c8bc0)}.wish-leaf-butter{background:linear-gradient(135deg,#efd59a,#d0b05b);color:#fffaf0}.wish-leaf-sky{background:linear-gradient(135deg,#a9cbd8,#77a8ba)}.wish-leaf-peach{background:linear-gradient(135deg,#efc3a4,#d99778)}
+.a5-wish-leaf:hover,.a5-wish-leaf:focus-visible{z-index:3;filter:saturate(1.1) brightness(1.03);transform:translate(-50%,-50%) rotate(0deg) scale(1.12);box-shadow:0 4px 0 rgba(79,117,77,.12),0 8px 13px rgba(69,105,68,.18);outline:2px solid rgba(255,255,255,.9);outline-offset:2px}
+.a5-wish-leaf:nth-child(4n+2),.a5-wish-leaf:nth-child(4n+3){animation-duration:5.8s}
+.a5-wish-leaf:nth-child(even){animation:none}
+.a5-wish-scene-loading{position:absolute;inset:27% 15% auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;max-width:70%;margin:auto;padding:15px 13px;border:1px dashed #d8e2c6;border-radius:16px;background:rgba(255,255,255,.78);color:#78906d;text-align:center;font-size:23px}
+.a5-wish-scene-loading strong{font:800 13px/1.35 "Nunito",sans-serif}.a5-wish-scene-loading span{font:11px/1.55 "Nunito",sans-serif}.a5-wish-error{font-size:19px;color:#9b6b73}
+.a5-wish-scene-caption{position:absolute;z-index:1;left:0;right:0;bottom:13px;display:flex;align-items:center;justify-content:center;gap:10px;color:#7f9874;font:italic 13px "Patrick Hand","Nunito",sans-serif;pointer-events:none}.a5-wish-scene-caption span{color:#d59aad}
+.a5-wish-pager{display:flex;align-items:center;justify-content:center;gap:13px;padding:8px 0 1px;color:#819477;font:800 11px "Nunito",sans-serif}
+.a5-wish-page-button{display:grid;place-items:center;width:34px;height:34px;border:1px solid #dce7d1;border-radius:12px;background:#fffefa;color:#6b8b65;box-shadow:0 3px 0 #e5eddb;cursor:pointer;transition:transform .16s ease,background .16s ease;touch-action:manipulation}.a5-wish-page-button:hover:not(:disabled){transform:translateY(-2px);background:#f5faec}.a5-wish-page-button:active:not(:disabled){transform:scale(.96)}.a5-wish-page-button:disabled{opacity:.38;cursor:not-allowed;box-shadow:none}
+.a5-wish-composer{position:relative;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;min-width:0;padding:25px 23px 22px;overflow:hidden;border:1px solid #f0dfe1;border-radius:21px;background:linear-gradient(150deg,#fffaf5,#fff4f7 72%,#f4f4fc);box-shadow:0 10px 23px rgba(174,121,139,.08)}
+.a5-wish-composer:after{content:"✧";position:absolute;right:15px;bottom:8px;color:#ddb3c2;font-size:45px;opacity:.35;pointer-events:none}
+.a5-wish-composer-flower{display:grid;place-items:center;width:42px;height:42px;margin-bottom:12px;border-radius:15px 15px 15px 5px;background:#f9e6ec;color:#c37591;font-size:23px;animation:a5WishHeaderSway 7s ease-in-out infinite}
+.a5-wish-composer h3{margin:6px 0;color:#805c6c;font:900 21px/1.2 "Nunito",sans-serif}.a5-wish-composer>p{margin:0 0 14px;color:#987e8a;font-size:12px;line-height:1.65}
+#a5WishForm{width:100%;display:flex;flex-direction:column;gap:8px}#a5WishText{width:100%;min-height:102px;resize:vertical;padding:12px 13px;border:1px solid #edd8e0;border-radius:14px;background:rgba(255,255,255,.85);color:#6e5661;font:13px/1.6 "Nunito",sans-serif;outline:none;transition:border-color .16s ease,box-shadow .16s ease}#a5WishText:focus{border-color:#d99bb1;box-shadow:0 0 0 3px rgba(217,155,177,.14)}#a5WishText::placeholder{color:#c3a7b1}
+.a5-wish-form-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;color:#b199a2;font:10px "Nunito",sans-serif}.a5-wish-submit{width:100%;justify-content:center;gap:8px;margin-top:4px;border-radius:14px;box-shadow:0 4px 0 #dbb8c8;transition:transform .16s ease,box-shadow .16s ease,filter .16s ease}.a5-wish-submit:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 6px 0 #dbb8c8}.a5-wish-submit:active:not(:disabled){transform:translateY(1px);box-shadow:0 2px 0 #dbb8c8}.a5-wish-submit:disabled{opacity:.55;cursor:not-allowed}
+.a5-wish-status{position:relative;z-index:1;margin-top:12px;color:#a08b94;font:10px/1.6 "Nunito",sans-serif}.a5-wish-modal-card{max-width:480px;text-align:center;background:linear-gradient(150deg,#fffdf5,#fff5f8)}.a5-wish-detail-emblem{display:grid;place-items:center;width:58px;height:58px;margin:2px auto 12px;border:1px solid #dbe8ce;border-radius:50% 50% 50% 12px;background:#f1f7e8;color:#6c9668;font-size:29px;box-shadow:0 5px 0 #e3ebd9}.a5-wish-modal-card h2{margin:7px 0;color:#71576b;font:800 25px "Nunito",sans-serif}.a5-wish-detail-byline{margin:0;color:#a58a98;font-size:12px}.a5-wish-detail-text{margin:21px 0;padding:20px 18px;border:1px dashed #e5cdd6;border-radius:16px;background:rgba(255,255,255,.7);color:#735e67;font:17px/1.8 "Patrick Hand","Nunito",sans-serif;white-space:pre-wrap;overflow-wrap:anywhere}.a5-wish-detail-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;color:#aa9298;font-size:10px}.a5-wish-detail-footer .outline-button{font-size:11px;padding:8px 11px}
+@keyframes a5WishLeafSway{0%{transform:translate(-50%,-50%) rotate(calc(var(--wish-rot) - 3deg)) translateY(0)}100%{transform:translate(-50%,-50%) rotate(calc(var(--wish-rot) + 3deg)) translateY(-3px)}}
+@keyframes a5WishHeaderSway{0%,100%{transform:rotate(-2deg) translateY(0)}50%{transform:rotate(2deg) translateY(-2px)}}
+@keyframes a5WishSunGlow{0%,100%{opacity:.58;transform:scale(.96)}50%{opacity:.95;transform:scale(1.04)}}
+@keyframes a5WishCloudDrift{0%{transform:translateX(-4px)}100%{transform:translateX(6px)}}
+
+/* More tactile yearbook details: keep the real page-turn mechanism unchanged. */
+.yearbook-cover-inner{overflow:hidden}
+.yearbook-cover-inner:before{content:"✧";position:absolute;left:12%;top:15%;color:#ffe8c7;opacity:.58;font-size:25px;pointer-events:none;animation:a5BookDoodleFloat 7s ease-in-out infinite}
+.yearbook-cover-inner:after{content:"✿";position:absolute;right:12%;top:20%;color:#ffe5d2;opacity:.5;font-size:22px;pointer-events:none;animation:a5BookDoodleFloat 8s ease-in-out -2s infinite reverse}
+.yearbook-cover-emblem i{animation:a5BookHeartGlow 5s ease-in-out infinite;box-shadow:inset 0 0 0 3px rgba(255,255,255,.035)}
+.yearbook-cover-corner-one{animation:a5BookDoodleFloat 7.5s ease-in-out infinite}.yearbook-cover-corner-two{animation:a5BookDoodleFloat 8.2s ease-in-out -2.5s infinite reverse}
+.yearbook-open-button:active{transform:translateY(1px) scale(.99)}
+.yearbook-page-button:active:not(:disabled){transform:scale(.95)}
+@keyframes a5BookDoodleFloat{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-4px) rotate(4deg)}}
+@keyframes a5BookHeartGlow{0%,100%{box-shadow:inset 0 0 0 3px rgba(255,255,255,.035),0 0 0 0 rgba(255,232,199,0)}50%{box-shadow:inset 0 0 0 3px rgba(255,255,255,.08),0 0 0 5px rgba(255,232,199,.08)}}
+@media (hover:hover) and (pointer:fine){.yearbook-cover{transition:transform .22s ease,box-shadow .22s ease}.yearbook-cover:hover{transform:translateY(-2px);box-shadow:0 25px 52px #76445b39,0 5px 0 #8d4a60,0 10px 0 #65344a}.yearbook-polaroid:hover{cursor:zoom-in}}
+@media (max-width:760px){
+  .a5-wish-tree-section{margin:19px 0 25px;padding:13px;border-radius:21px}.a5-wish-heading{gap:8px;margin-bottom:13px}.a5-wish-heading h2{font-size:23px}.a5-wish-heading p{max-width:280px;font-size:11px}.a5-wish-count-badge{min-width:56px;min-height:56px;border-radius:18px 18px 18px 7px}.a5-wish-count-badge strong{font-size:20px}.a5-wish-count-badge span{font-size:8px}
+  .a5-wish-layout{grid-template-columns:minmax(0,1fr);gap:12px}.a5-wish-scene-wrap{padding:7px;border-radius:18px}.a5-wish-scene{min-height:340px;height:340px;border-radius:13px}.a5-wish-leaf{width:34px;height:26px;font-size:8px;box-shadow:0 2px 0 rgba(79,117,77,.1),0 3px 7px rgba(69,105,68,.07);animation:none;will-change:auto}.a5-wish-leaf:nth-child(5n+1),.a5-wish-leaf:nth-child(5n+3){animation:a5WishLeafSway 6.5s ease-in-out var(--wish-delay) infinite alternate}.a5-wish-leaf:hover,.a5-wish-leaf:focus-visible{transform:translate(-50%,-50%) rotate(var(--wish-rot));box-shadow:0 2px 0 rgba(79,117,77,.1),0 3px 7px rgba(69,105,68,.07)}.a5-wish-leaf:active{filter:brightness(1.07);transform:translate(-50%,-50%) rotate(var(--wish-rot)) scale(.94)}
+  .a5-wish-scene-loading{inset:25% 10% auto;max-width:80%;font-size:19px}.a5-wish-scene-caption{bottom:8px;font-size:11px}.a5-wish-composer{padding:20px 16px 18px;border-radius:18px}.a5-wish-composer h3{font-size:19px}.a5-wish-composer>p{font-size:11px}.a5-wish-composer-flower{width:37px;height:37px;font-size:20px;margin-bottom:9px}#a5WishText{min-height:86px;font-size:16px}.a5-wish-submit{min-height:46px}.a5-wish-detail-text{font-size:16px;padding:16px 13px}.a5-wish-detail-footer{justify-content:center}
+  .yearbook-cover-inner:before{left:7%;top:10%;font-size:19px}.yearbook-cover-inner:after{right:7%;top:13%;font-size:18px}.yearbook-cover-emblem i{animation:none}.yearbook-cover-corner-one,.yearbook-cover-corner-two{animation:none}
+}
+@media (hover:none){.a5-wish-leaf:hover{filter:none}.a5-wish-submit:hover:not(:disabled){transform:none}.a5-wish-page-button:hover:not(:disabled){transform:none}}
+@media (prefers-reduced-motion:reduce){
+  .a5-wish-tree-section *, .yearbook-cover-inner:before,.yearbook-cover-inner:after,.yearbook-cover-corner-one,.yearbook-cover-corner-two,.yearbook-cover-emblem i{animation:none!important;scroll-behavior:auto!important;transition:none!important}
+}
+

@@ -59,6 +59,25 @@
   let yearbookLoadGeneration = 0;
   let yearbookRenderGeneration = 0;
   let yearbookTouchStart = null;
+
+  // A5 shared Wish Tree: small paginated dataset and one isolated Realtime channel.
+  const A5_WISH_PAGE_SIZE = 24;
+  const A5_WISH_POSITIONS = [
+    [40,13],[52,13],[64,13],[34,23],[46,23],[58,23],[70,23],
+    [28,33],[40,33],[52,33],[64,33],[76,33],[25,43],[37,43],[49,43],[61,43],[73,43],
+    [31,53],[43,53],[55,53],[67,53],[38,63],[50,63],[62,63]
+  ];
+  const A5_WISH_COLORS = ['mint','rose','lilac','butter','sky','peach'];
+  let a5WishItems = [];
+  let a5WishCount = 0;
+  let a5WishPage = 0;
+  let a5WishBusy = false;
+  let a5WishFeatureAvailable = true;
+  let a5WishStatusOverride = '';
+  let a5WishLoadToken = 0;
+  let a5WishChannel = null;
+  let a5WishRealtimeTimer = null;
+  let a5WishSelectedId = null;
   let homeFilter = 'all';
   let galleryFilter = 'all';
   let searchTerm = '';
@@ -576,7 +595,13 @@
     registerA5ServiceWorker();
     updateA5InstallButtons();
     setupA5LiveLifecycleEvents();
+    ensureA5WishTreeMarkup();
     bindEvents();
+    $('#a5WishForm')?.addEventListener('submit', submitA5Wish);
+    $('#a5WishText')?.addEventListener('input', event => {
+      const label = $('#a5WishCharCount');
+      if (label) label.textContent = `${String(event.target.value || '').length}/240`;
+    });
     if (!isConfigured() || !window.supabase?.createClient) {
       showAuthScreen();
       return;
@@ -595,6 +620,7 @@
         window.setTimeout(() => {
           if (event === 'SIGNED_OUT') {
             stopA5RealtimeSubscriptions();
+            stopA5WishRealtime(); a5WishLoadToken += 1; a5WishItems = []; a5WishCount = 0; a5WishPage = 0; a5WishBusy = false;
             currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; classroomSeats = []; classroomFeatureAvailable = false; classOfficerAssignments = []; officersFeatureAvailable = false; isA5SiteAdmin = false; seatPromptShownForUserId = null; lastUserId = null; profileArchiveStates.clear(); profileArchiveItemsById.clear(); publicProfileUserId = null;
             yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookOpened = false; yearbookSpreadIndex = 0;
             showAuthScreen();
@@ -643,6 +669,8 @@
       await syncLinkedProviders();
       renderProfile();
       setupA5RealtimeSubscriptions();
+      setupA5WishRealtime();
+      if (!a5WishItems.length && a5WishFeatureAvailable) void loadA5WishPage(0);
       return;
     }
     stopA5RealtimeSubscriptions();
@@ -652,6 +680,8 @@
     renderAll();
     updateA5PushSettingsUi();
     setupA5RealtimeSubscriptions();
+    void loadA5WishPage(0);
+    setupA5WishRealtime();
   }
 
   async function signOut() {
@@ -662,6 +692,7 @@
     const { error } = await supabase.auth.signOut();
     if (button) button.disabled = false;
     if (error) { console.error(error); toast('Chưa đăng xuất được. Thử lại nhé.', 'error'); return; }
+    stopA5WishRealtime(); a5WishLoadToken += 1; a5WishItems = []; a5WishCount = 0; a5WishPage = 0; a5WishBusy = false;
     currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; classroomSeats = []; classroomFeatureAvailable = false; classOfficerAssignments = []; officersFeatureAvailable = false; isA5SiteAdmin = false; seatPromptShownForUserId = null; lastUserId = null; profileArchiveStates.clear(); profileArchiveItemsById.clear(); publicProfileUserId = null;
     yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookOpened = false; yearbookSpreadIndex = 0;
     signedUrlCache.clear(); showAuthScreen(); toast('Hẹn gặp cậu ở cuốn lưu bút nhé ♡', 'success');
@@ -2165,6 +2196,241 @@
       button.title = connected ? 'Tài khoản đã được liên kết' : `Liên kết ${provider === 'google' ? 'Google' : 'Facebook'}`;
     }
   }
+  function ensureA5WishTreeMarkup() {
+    if (!$('#a5WishTreeSection')) {
+      const home = $('#page-home');
+      const anchor = home?.querySelector('.section-heading');
+      if (anchor) {
+        anchor.insertAdjacentHTML('beforebegin', `
+          <section class="a5-wish-tree-section" id="a5WishTreeSection" aria-labelledby="a5WishTreeTitle">
+            <div class="a5-wish-heading">
+              <div><span class="section-overline">PLANT A LITTLE HOPE · A5</span><h2 id="a5WishTreeTitle">Cây điều ước <span aria-hidden="true">🌿</span></h2><p>Mỗi chiếc lá là một điều mong ước của tụi mình. Chạm vào chiếc lá để đọc nhé.</p></div>
+              <div class="a5-wish-count-badge"><strong id="a5WishCount">0</strong><span>điều ước</span></div>
+            </div>
+            <div class="a5-wish-layout">
+              <div class="a5-wish-scene-wrap">
+                <div class="a5-wish-scene" aria-label="Cây điều ước của lớp A5">
+                  <span class="a5-wish-sun-doodle" aria-hidden="true">☼</span><span class="a5-wish-cloud a5-wish-cloud-one" aria-hidden="true">☁</span><span class="a5-wish-cloud a5-wish-cloud-two" aria-hidden="true">☁</span>
+                  <svg class="a5-wish-tree-svg" viewBox="0 0 460 390" aria-hidden="true" focusable="false">
+                    <defs>
+                      <linearGradient id="a5WishTrunk" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#92604c"/><stop offset=".48" stop-color="#c58d6a"/><stop offset="1" stop-color="#95624d"/></linearGradient>
+                      <linearGradient id="a5WishGrass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c8d9ac"/><stop offset="1" stop-color="#e7e8c6"/></linearGradient>
+                    </defs>
+                    <ellipse cx="230" cy="362" rx="150" ry="17" fill="url(#a5WishGrass)" opacity=".8"/>
+                    <path d="M230 366 C220 326 237 295 229 253 C224 229 210 215 190 198 M230 282 C250 254 275 241 297 215 M226 305 C199 282 180 267 154 262 M235 324 C262 302 288 294 313 282" fill="none" stroke="url(#a5WishTrunk)" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M190 198 C179 183 173 171 174 156 M297 215 C309 199 317 184 318 169 M154 262 C141 248 135 237 135 225 M313 282 C327 269 335 257 336 246" fill="none" stroke="#b47b5d" stroke-width="9" stroke-linecap="round"/>
+                    <path d="M229 346 C224 330 224 309 230 287" fill="none" stroke="#d8a57e" stroke-width="3" stroke-linecap="round" opacity=".9"/>
+                    <g fill="#f5d78c" opacity=".9"><circle cx="83" cy="321" r="3"/><circle cx="373" cy="322" r="3"/><circle cx="104" cy="344" r="2"/><circle cx="350" cy="345" r="2"/></g>
+                    <g fill="#f8edf2"><circle cx="84" cy="338" r="5"/><circle cx="90" cy="334" r="5"/><circle cx="90" cy="342" r="5"/><circle cx="84" cy="342" r="5"/><circle cx="87" cy="339" r="3" fill="#e4b85e"/><circle cx="367" cy="340" r="5"/><circle cx="373" cy="336" r="5"/><circle cx="373" cy="344" r="5"/><circle cx="367" cy="344" r="5"/><circle cx="370" cy="341" r="3" fill="#e4b85e"/></g>
+                  </svg>
+                  <div class="a5-wish-leaf-layer" id="a5WishLeafLayer" aria-label="Những chiếc lá điều ước" aria-live="polite"><div class="a5-wish-scene-loading">🌱<span>Đang gọi những điều ước...</span></div></div>
+                  <div class="a5-wish-scene-caption" aria-hidden="true"><span>✿</span> Gieo một điều lành <span>✿</span></div>
+                </div>
+                <div class="a5-wish-pager"><button type="button" class="a5-wish-page-button" id="a5WishPrev" data-action="wish-page-prev" aria-label="Xem các điều ước trước">←</button><span id="a5WishPageLabel">Cành 1</span><button type="button" class="a5-wish-page-button" id="a5WishNext" data-action="wish-page-next" aria-label="Xem các điều ước tiếp theo">→</button></div>
+              </div>
+              <div class="a5-wish-composer">
+                <div class="a5-wish-composer-flower" aria-hidden="true">✿</div>
+                <span class="section-overline">A LITTLE WISH FOR THE FUTURE</span><h3>Gieo điều ước của cậu</h3><p>Ước gì cho bản thân, cho lớp mình, hay cho những ngày sắp tới?</p>
+                <form id="a5WishForm">
+                  <label class="visually-hidden" for="a5WishText">Điều ước của cậu</label>
+                  <textarea id="a5WishText" name="wish_text" rows="4" maxlength="240" required placeholder="Mong rằng sau này..." autocomplete="off"></textarea>
+                  <div class="a5-wish-form-meta"><span id="a5WishCharCount">0/240</span><span>🌱 tối đa 240 ký tự</span></div>
+                  <button class="primary-button a5-wish-submit" id="a5WishSubmit" type="submit"><span aria-hidden="true">✦</span> Gửi lên cây <span aria-hidden="true">♡</span></button>
+                </form>
+                <div class="a5-wish-status" id="a5WishStatus" role="status" aria-live="polite">Mọi thành viên đã đăng nhập A5 đều có thể đọc các điều ước. Đừng ghi thông tin quá riêng tư nha.</div>
+              </div>
+            </div>
+          </section>`);
+      }
+    }
+    if (!$('#a5WishModal')) {
+      document.body.insertAdjacentHTML('beforeend', `
+        <div class="modal-backdrop hidden" id="a5WishModal" role="dialog" aria-modal="true" aria-labelledby="a5WishDetailTitle">
+          <div class="modal-card a5-wish-modal-card"><button class="modal-close" type="button" data-action="close-modal" aria-label="Đóng">×</button>
+            <div class="a5-wish-detail-emblem" aria-hidden="true">🍃</div><span class="section-overline">A LEAF FROM A5</span>
+            <h2 id="a5WishDetailTitle">Một điều ước nhỏ</h2><p class="a5-wish-detail-byline" id="a5WishDetailByline"></p>
+            <blockquote class="a5-wish-detail-text" id="a5WishDetailText"></blockquote>
+            <div class="a5-wish-detail-footer"><span id="a5WishDetailDate"></span><button type="button" class="outline-button hidden" id="a5WishDeleteButton" data-action="delete-wish">Gỡ điều ước của mình</button></div>
+          </div>
+        </div>`);
+    }
+  }
+
+  function a5WishNameFor(wish) {
+    return displayName(profiles.find(profile => profile.id === wish?.user_id) || {});
+  }
+
+  function renderA5WishTree() {
+    const leafLayer = $('#a5WishLeafLayer');
+    if (!leafLayer) return;
+    const count = $('#a5WishCount');
+    if (count) count.textContent = String(a5WishCount);
+    const pageCount = Math.max(1, Math.ceil(a5WishCount / A5_WISH_PAGE_SIZE));
+    const pageLabel = $('#a5WishPageLabel');
+    if (pageLabel) pageLabel.textContent = a5WishCount ? `Cành ${a5WishPage + 1} / ${pageCount}` : 'Cành đầu tiên';
+    const prev = $('#a5WishPrev'), next = $('#a5WishNext');
+    if (prev) prev.disabled = a5WishBusy || a5WishPage <= 0 || !a5WishCount;
+    if (next) next.disabled = a5WishBusy || a5WishPage >= pageCount - 1 || !a5WishCount;
+    const status = $('#a5WishStatus');
+    const form = $('#a5WishForm');
+    if (form) {
+      form.querySelectorAll('textarea,button[type="submit"]').forEach(control => { control.disabled = !a5WishFeatureAvailable || !currentUser || a5WishBusy; });
+    }
+    if (a5WishItems.length) {
+      leafLayer.innerHTML = a5WishItems.map((wish, index) => {
+        const pos = A5_WISH_POSITIONS[index % A5_WISH_POSITIONS.length];
+        const seed = [...String(wish.id)].reduce((sum, ch) => ((sum * 31) + ch.charCodeAt(0)) >>> 0, 7);
+        const color = A5_WISH_COLORS[seed % A5_WISH_COLORS.length];
+        const rotation = (seed % 15) - 7;
+        const delay = (seed % 17) / 10;
+        const author = a5WishNameFor(wish);
+        const itemNo = String(a5WishPage * A5_WISH_PAGE_SIZE + index + 1).padStart(2, '0');
+        return `<button type="button" class="a5-wish-leaf wish-leaf-${color}" data-action="open-wish" data-wish-id="${escapeAttr(wish.id)}" style="--wish-x:${pos[0]}%;--wish-y:${pos[1]}%;--wish-rot:${rotation}deg;--wish-delay:${delay}s" aria-label="Mở điều ước ${itemNo} của ${escapeAttr(author)}" title="Điều ước của ${escapeAttr(author)}"><span>${itemNo}</span><i aria-hidden="true">✧</i></button>`;
+      }).join('');
+    } else if (!a5WishFeatureAvailable || a5WishStatusOverride) {
+      leafLayer.innerHTML = `<div class="a5-wish-scene-loading a5-wish-error">🌱<span>${escapeHTML(a5WishStatusOverride || 'Cây điều ước chưa được bật. Quản trị viên cần chạy file supabase/a5-wish-tree.sql một lần.')}</span></div>`;
+    } else if (a5WishBusy) {
+      leafLayer.innerHTML = '<div class="a5-wish-scene-loading">🍃<span>Đang gọi những điều ước...</span></div>';
+    } else {
+      leafLayer.innerHTML = '<div class="a5-wish-scene-loading">🌱<strong>Cây đang chờ những chiếc lá đầu tiên</strong><span>Điều ước của cậu sẽ là một trong những chiếc lá đầu tiên đó.</span></div>';
+    }
+    if (status && a5WishStatusOverride) status.textContent = a5WishStatusOverride;
+    else if (status && !a5WishFeatureAvailable) status.textContent = 'Cần chạy migration supabase/a5-wish-tree.sql trong Supabase SQL Editor. Lệnh chỉ tạo bảng mới và quyền truy cập cho cây điều ước; không sửa bảng kỷ niệm hiện tại.';
+    else if (status && !currentUser) status.textContent = 'Đăng nhập bằng tài khoản A5 để gieo điều ước nhé.';
+    else if (status && a5WishFeatureAvailable) status.textContent = 'Mọi thành viên đã đăng nhập A5 đều có thể đọc các điều ước. Đừng ghi thông tin quá riêng tư nha.';
+  }
+
+  async function loadA5WishPage(requestedPage = a5WishPage) {
+    if (!supabase || !currentUser) return;
+    const token = ++a5WishLoadToken;
+    a5WishBusy = true;
+    a5WishFeatureAvailable = true;
+    a5WishStatusOverride = '';
+    renderA5WishTree();
+    try {
+      const start = Math.max(0, Number(requestedPage) || 0) * A5_WISH_PAGE_SIZE;
+      const { data, error, count } = await supabase.from('a5_wishes')
+        .select('id,user_id,wish_text,created_at', { count: 'exact' })
+        .order('created_at', { ascending: false }).order('id', { ascending: false })
+        .range(start, start + A5_WISH_PAGE_SIZE - 1);
+      if (error) throw error;
+      if (token !== a5WishLoadToken || !currentUser) return;
+      a5WishCount = Number(count) || 0;
+      const pageCount = Math.max(1, Math.ceil(a5WishCount / A5_WISH_PAGE_SIZE));
+      const safePage = Math.min(Math.max(0, Number(requestedPage) || 0), pageCount - 1);
+      if (safePage !== (Number(requestedPage) || 0)) {
+        a5WishBusy = false;
+        await loadA5WishPage(safePage);
+        return;
+      }
+      a5WishPage = safePage;
+      a5WishItems = data || [];
+    } catch (error) {
+      if (token !== a5WishLoadToken) return;
+      const message = String(error?.message || error || 'Unknown error');
+      console.warn('A5 Wish Tree could not load:', message);
+      const tableMissing = /a5_wishes/i.test(message) && /(does not exist|not found|schema cache|could not find|relation)/i.test(message);
+      a5WishFeatureAvailable = !tableMissing;
+      a5WishStatusOverride = tableMissing
+        ? 'Cây điều ước chưa được bật. Quản trị viên cần chạy supabase/a5-wish-tree.sql một lần.'
+        : 'Chưa tải được cây điều ước do kết nối hoặc quyền truy cập. Cậu thử tải lại trang; các kỷ niệm khác không bị ảnh hưởng.';
+      a5WishItems = [];
+      a5WishCount = 0;
+    } finally {
+      if (token === a5WishLoadToken) {
+        a5WishBusy = false;
+        renderA5WishTree();
+      }
+    }
+  }
+
+  function stopA5WishRealtime() {
+    if (a5WishRealtimeTimer) window.clearTimeout(a5WishRealtimeTimer);
+    a5WishRealtimeTimer = null;
+    if (a5WishChannel && supabase) {
+      try { void supabase.removeChannel(a5WishChannel); } catch (error) { console.warn('Could not stop Wish Tree Realtime:', error); }
+    }
+    a5WishChannel = null;
+  }
+
+  function setupA5WishRealtime() {
+    if (!supabase || !currentUser) return;
+    stopA5WishRealtime();
+    a5WishChannel = supabase.channel(`a5-wishes-${currentUser.id.slice(0, 8)}-${Date.now().toString(36)}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'a5_wishes' }, () => {
+        if (a5WishRealtimeTimer) window.clearTimeout(a5WishRealtimeTimer);
+        a5WishRealtimeTimer = window.setTimeout(() => { void loadA5WishPage(a5WishPage); }, 380);
+      })
+      .subscribe(status => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') console.warn('A5 Wish Tree Realtime is unavailable; the tree still works with manual refresh/reload.');
+      });
+  }
+
+  async function submitA5Wish(event) {
+    event.preventDefault();
+    if (!supabase || !currentUser) return toast('Đăng nhập tài khoản A5 trước khi gieo điều ước nhé.', 'info');
+    if (!a5WishFeatureAvailable) return toast('Cây điều ước chưa được bật. Quản trị viên cần chạy migration trước.', 'info', 4800);
+    const input = $('#a5WishText');
+    const text = String(input?.value || '').trim();
+    if (!text) return toast('Viết một điều ước nhỏ trước nha 🌱', 'info');
+    if (text.length > 240) return toast('Điều ước tối đa 240 ký tự nhé.', 'info');
+    const submitButton = $('#a5WishSubmit');
+    if (submitButton) { submitButton.disabled = true; submitButton.dataset.originalText = submitButton.textContent; submitButton.textContent = 'Đang gieo điều ước…'; }
+    a5WishBusy = true;
+    renderA5WishTree();
+    try {
+      const { error } = await supabase.from('a5_wishes').insert({ user_id: currentUser.id, wish_text: text });
+      if (error) throw error;
+      if (input) input.value = '';
+      if ($('#a5WishCharCount')) $('#a5WishCharCount').textContent = '0/240';
+      toast('Điều ước đã nở thành một chiếc lá trên cây 🌿', 'success', 3600);
+      await loadA5WishPage(0);
+    } catch (error) {
+      console.error('A5 wish submit failed:', error);
+      toast('Chưa lưu được điều ước. Kiểm tra xem bảng a5_wishes đã được tạo và thử lại nhé.', 'error', 5200);
+    } finally {
+      a5WishBusy = false;
+      if (submitButton) { submitButton.disabled = !a5WishFeatureAvailable || !currentUser; submitButton.textContent = '✦ Gửi lên cây ♡'; }
+      renderA5WishTree();
+    }
+  }
+
+  function openA5WishDetail(wishId) {
+    const wish = a5WishItems.find(item => String(item.id) === String(wishId));
+    if (!wish) return toast('Chiếc lá này đã đổi cành. Cậu tải lại cây rồi thử nhé.', 'info');
+    a5WishSelectedId = String(wish.id);
+    const profile = profiles.find(item => item.id === wish.user_id) || {};
+    const created = new Date(wish.created_at);
+    const dateText = Number.isNaN(created.getTime()) ? '' : created.toLocaleDateString('vi-VN', { day: 'numeric', month: 'long', year: 'numeric' });
+    $('#a5WishDetailByline').textContent = `Một điều ước của ${displayName(profile)}`;
+    $('#a5WishDetailText').textContent = wish.wish_text;
+    $('#a5WishDetailDate').textContent = dateText;
+    const deleteButton = $('#a5WishDeleteButton');
+    if (deleteButton) {
+      deleteButton.dataset.wishId = String(wish.id);
+      deleteButton.classList.toggle('hidden', wish.user_id !== currentUser?.id);
+    }
+    openModal('a5WishModal');
+  }
+
+  async function deleteA5Wish(wishId) {
+    if (!supabase || !currentUser) return;
+    const wish = a5WishItems.find(item => String(item.id) === String(wishId || a5WishSelectedId));
+    if (!wish || wish.user_id !== currentUser.id) return toast('Cậu chỉ có thể gỡ điều ước của chính mình.', 'error');
+    if (!window.confirm('Gỡ điều ước này khỏi cây A5 nhé?')) return;
+    try {
+      const { error } = await supabase.from('a5_wishes').delete().eq('id', wish.id).eq('user_id', currentUser.id);
+      if (error) throw error;
+      closeModals();
+      toast('Đã gỡ điều ước khỏi cây.', 'success');
+      const page = a5WishItems.length === 1 && a5WishPage > 0 ? a5WishPage - 1 : a5WishPage;
+      await loadA5WishPage(page);
+    } catch (error) {
+      console.error('A5 wish delete failed:', error);
+      toast('Chưa gỡ được điều ước. Cậu thử lại nhé.', 'error');
+    }
+  }
+
   function yearbookIsMobile() {
     return window.matchMedia ? window.matchMedia('(max-width: 760px)').matches : window.innerWidth <= 680;
   }
@@ -2338,6 +2604,7 @@
     renderOnThisDay();
     renderNotificationBadge();
     renderYearbook();
+    renderA5WishTree();
     updateActiveTab();
     if (activeTab === 'yearbook' && yearbookOpened && !Array.isArray(yearbookMediaCache) && !yearbookLoading) void loadYearbookData();
   }
@@ -3615,6 +3882,10 @@
       else if (action === 'open-profile-archive') await openProfileArchive(actionButton.dataset.profileArchiveMode, actionButton.dataset.userId);
       else if (action === 'profile-archive-page') await loadProfileArchivePage(actionButton.dataset.profileArchiveMode, actionButton.dataset.userId, Number(actionButton.dataset.page));
       else if (action === 'profile-archive-preview') showProfileArchivePreview(actionButton.dataset.profileArchiveMode, actionButton.dataset.userId);
+      else if (action === 'open-wish') openA5WishDetail(actionButton.dataset.wishId);
+      else if (action === 'delete-wish') await deleteA5Wish(actionButton.dataset.wishId);
+      else if (action === 'wish-page-prev') { if (a5WishPage > 0) await loadA5WishPage(a5WishPage - 1); }
+      else if (action === 'wish-page-next') { if ((a5WishPage + 1) * A5_WISH_PAGE_SIZE < a5WishCount) await loadA5WishPage(a5WishPage + 1); }
       else if (action === 'link-google') await linkProvider('google');
       else if (action === 'link-facebook') await linkProvider('facebook');
     });
