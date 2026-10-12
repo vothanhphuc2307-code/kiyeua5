@@ -1247,3 +1247,191 @@ img, video { max-width: 100%; }
   .profile-archive-button, .profile-archive-button span, .profile-archive-tile,
   .profile-archive-tile-media > img { animation: none !important; transition: none !important; transform: none !important; }
 }
+
+
+/* --------------------------------------------------------------------------
+   A5 GARDEN UI + LIGHT MOTION v2.0
+   CSS-only visual refinement; no JS, external library, database or SQL changes.
+   Desktop: intentional hover details + existing slow ambient drift.
+   Touch devices: press feedback, static lighter background, no hover simulation.
+--------------------------------------------------------------------------- */
+:root {
+  --a5-garden-rose: #d47f9b;
+  --a5-garden-rose-dark: #b85e7d;
+  --a5-garden-blush: #fff1f5;
+  --a5-garden-lavender: #eee9ff;
+  --a5-garden-butter: #fff3cf;
+  --a5-garden-leaf: #e8f3e8;
+  --a5-garden-ease: cubic-bezier(.2, .75, .25, 1);
+}
+
+/* A quiet sprinkle of tiny paper-confetti dots; CSS background only, no DOM. */
+.app-shell {
+  background-color: #fffaf8;
+  background-image:
+    radial-gradient(circle at 13px 17px, rgba(212,127,155,.19) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 63px 79px, rgba(168,151,213,.15) 0 1.15px, transparent 1.8px),
+    radial-gradient(circle at 105px 36px, rgba(225,184,109,.16) 0 1px, transparent 1.7px),
+    linear-gradient(180deg, #fffaf8 0%, #fff9fb 52%, #fffaf8 100%);
+  background-repeat: repeat, repeat, repeat, no-repeat;
+  background-size: 138px 166px, 184px 211px, 223px 187px, 100% 100%;
+  background-position: 0 0, 29px 42px, 57px 13px, 0 0;
+}
+
+/* Friendly selection and a more intentional keyboard focus. */
+::selection { background: #f7dce5; color: #684b5b; }
+button:focus-visible, a:focus-visible, input:focus-visible,
+textarea:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+  outline-color: #d889a5;
+  outline-offset: 3px;
+}
+
+/* Titles get one quiet hand-drawn sparkle, not another animated layer. */
+.page-title-row h1 {
+  text-wrap: balance;
+}
+.page-title-row h1::after {
+  content: "✦";
+  display: inline-block;
+  margin-inline-start: .34em;
+  color: #e2a0b6;
+  font-size: .48em;
+  vertical-align: .48em;
+  transform: rotate(-9deg);
+  transition: transform .2s ease, color .2s ease;
+  pointer-events: none;
+}
+
+/* Make common controls feel tactile while keeping motion transform-only. */
+.primary-button, .outline-button, .subtle-button, .text-button,
+.social-button, .nav-item, .filter-pill, .tiny-action, .reaction-pill,
+.comment-open-button, .video-download-button, .media-download-button,
+.pwa-install-button, .people-mode-button, .report-open-button,
+.yearbook-page-button, .profile-archive-button {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.primary-button > span, .outline-button > span, .subtle-button > span,
+.nav-icon, .profile-archive-button span {
+  transition: transform .18s var(--a5-garden-ease);
+  transform-origin: center;
+}
+
+/* Desktop/mouse only: no hover effects are added to touch screens. */
+@media (hover: hover) and (pointer: fine) and (min-width: 761px) {
+  .primary-button:hover:not(:disabled) {
+    transform: translate3d(0, -2px, 0);
+    box-shadow: 0 11px 23px rgba(191,100,129,.23);
+    filter: saturate(1.035);
+  }
+  .primary-button:hover:not(:disabled) > span,
+  .outline-button:hover:not(:disabled) > span,
+  .subtle-button:hover:not(:disabled) > span {
+    transform: translate3d(0, -1px, 0) rotate(-5deg);
+  }
+  .outline-button:hover:not(:disabled),
+  .social-button:hover:not(:disabled),
+  .profile-archive-button:hover:not(:disabled) {
+    transform: translate3d(0, -2px, 0);
+    box-shadow: 0 7px 17px rgba(126, 79, 104, .075);
+  }
+  .nav-item:hover {
+    transform: translate3d(2px, 0, 0);
+  }
+  .nav-item:hover .nav-icon {
+    transform: translate3d(0, -1px, 0) rotate(-5deg);
+  }
+  .filter-pill:hover {
+    transform: translate3d(0, -1px, 0);
+  }
+  .tiny-action:hover:not(:disabled), .reaction-pill:hover:not(:disabled) {
+    transform: translate3d(0, -1px, 0) scale(1.025);
+  }
+  .page-title-row:hover h1::after {
+    color: #cf7896;
+    transform: rotate(16deg) scale(1.12);
+  }
+  .memory-card:hover, .person-card:hover, .on-this-day-item:hover {
+    border-color: #efd2dc;
+    box-shadow: 0 12px 27px rgba(124, 76, 101, .085);
+  }
+}
+
+/* Tiny twinkle only on a few existing decorative icons, and desktop only. */
+@keyframes a5GardenTwinkle {
+  0%, 100% { opacity: .72; transform: scale(.96) rotate(-4deg); }
+  50% { opacity: 1; transform: scale(1.08) rotate(6deg); }
+}
+@media (hover: hover) and (pointer: fine) and (min-width: 761px) {
+  .nav-spark { animation: a5GardenTwinkle 3.8s ease-in-out infinite; }
+  .floating-heart { animation-duration: 4.8s; }
+}
+
+/* The phone layout is intentionally calmer and more compact. */
+@media (max-width: 760px), (hover: none), (pointer: coarse) {
+  .app-shell {
+    background-image:
+      radial-gradient(circle at 17px 23px, rgba(212,127,155,.14) 0 1px, transparent 1.6px),
+      radial-gradient(circle at 98px 93px, rgba(168,151,213,.12) 0 1px, transparent 1.6px),
+      linear-gradient(180deg, #fffaf8 0%, #fff9fb 54%, #fffaf8 100%);
+    background-repeat: repeat, repeat, no-repeat;
+    background-size: 176px 206px, 226px 248px, 100% 100%;
+    background-position: 0 0, 41px 67px, 0 0;
+  }
+  /* Mobile uses tap feedback rather than simulated hover; keep it brief. */
+  .primary-button, .outline-button, .subtle-button, .text-button,
+  .social-button, .nav-item, .filter-pill, .tiny-action, .reaction-pill,
+  .comment-open-button, .video-download-button, .media-download-button,
+  .pwa-install-button, .people-mode-button, .report-open-button,
+  .yearbook-page-button, .profile-archive-button {
+    transition-duration: .14s;
+  }
+  .primary-button:active:not(:disabled), .outline-button:active:not(:disabled),
+  .subtle-button:active:not(:disabled), .social-button:active:not(:disabled),
+  .comment-open-button:active, .video-download-button:active:not(:disabled),
+  .media-download-button:active:not(:disabled), .pwa-install-button:active:not(:disabled),
+  .people-mode-button:active, .report-open-button:active,
+  .yearbook-page-button:active:not(:disabled), .profile-archive-button:active:not(:disabled) {
+    transform: scale(.982);
+  }
+  .nav-item:active, .filter-pill:active {
+    transform: scale(.99);
+  }
+  .primary-button > span, .outline-button > span, .subtle-button > span,
+  .nav-icon, .profile-archive-button span {
+    transition-duration: .12s;
+  }
+  .page-title-row h1::after { color: #e6b1c2; }
+  .page-title-row:hover h1::after { transform: none; }
+}
+
+/* Small phone: save GPU work and avoid decorative blur/floating layers. */
+@media (max-width: 420px) {
+  .app-shell {
+    background-image:
+      radial-gradient(circle at 20px 24px, rgba(212,127,155,.11) 0 1px, transparent 1.5px),
+      linear-gradient(180deg, #fffaf8 0%, #fff9fb 100%);
+    background-size: 220px 240px, 100% 100%;
+    background-position: 0 0, 0 0;
+  }
+  .topbar {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: rgba(255,253,251,.97);
+  }
+  .memory-card, .person-card, .on-this-day-item {
+    box-shadow: 0 3px 11px rgba(104,65,85,.035);
+  }
+  .page-title-row h1::after { font-size: .42em; }
+}
+
+/* Respect OS-level reduced motion, including new sparkles and button gestures. */
+@media (prefers-reduced-motion: reduce) {
+  .nav-spark, .floating-heart { animation: none !important; }
+  .page-title-row h1::after,
+  .primary-button > span, .outline-button > span, .subtle-button > span,
+  .nav-icon, .profile-archive-button span {
+    transition: none !important;
+    transform: none !important;
+  }
+}
