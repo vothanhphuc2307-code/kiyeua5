@@ -1435,3 +1435,142 @@ textarea:focus-visible, select:focus-visible, [tabindex]:focus-visible {
     transform: none !important;
   }
 }
+
+
+/* --------------------------------------------------------------------------
+   A5 GARDEN UI + LIGHT MOTION v2.1
+   More visible than v2.0, still CSS-only and deliberately restrained.
+--------------------------------------------------------------------------- */
+:root {
+  --a5-garden-blush-strong: rgba(244, 203, 220, .38);
+  --a5-garden-lavender-soft: rgba(220, 215, 248, .25);
+  --a5-garden-leaf-soft: rgba(211, 233, 215, .22);
+  --a5-garden-shadow: 0 12px 27px rgba(151, 89, 121, .13);
+}
+
+/* Make the school-scrapbook background visibly present, but static and cheap to paint. */
+.app-main {
+  background-color: #fffaf8;
+  background-image:
+    radial-gradient(ellipse at 92% 4%, var(--a5-garden-blush-strong), transparent 34%),
+    radial-gradient(ellipse at 7% 37%, var(--a5-garden-lavender-soft), transparent 29%),
+    radial-gradient(ellipse at 82% 68%, var(--a5-garden-leaf-soft), transparent 31%),
+    radial-gradient(circle at 14px 18px, rgba(207, 124, 157, .30) 0 1.45px, transparent 2px),
+    radial-gradient(circle at 71px 66px, rgba(154, 139, 202, .25) 0 1.25px, transparent 1.9px),
+    linear-gradient(180deg, #fffaf8, #fffaf8);
+  background-repeat: no-repeat, no-repeat, no-repeat, repeat, repeat, no-repeat;
+  background-size: 100% 560px, 100% 760px, 100% 700px, 96px 112px, 151px 143px, 100% 100%;
+  background-position: right top, left 32%, right 66%, 0 0, 34px 41px, 0 0;
+}
+
+/* Slightly more visible paper-and-sticker details in headings. */
+.page-title-row h1::after {
+  content: "✦";
+  margin-inline-start: .38em;
+  color: #d889a5;
+  text-shadow: 0 2px 8px rgba(216, 137, 165, .25);
+  transition: transform .22s ease, color .22s ease;
+}
+.nav-item.active .nav-spark { color: #c66f91; opacity: 1; }
+
+@keyframes a5GardenFloat21 {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(-12deg); }
+  50% { transform: translate3d(0, -5px, 0) rotate(-8deg); }
+}
+@keyframes a5GardenSparkle21 {
+  0%, 100% { transform: rotate(-9deg) scale(.94); opacity: .78; }
+  50% { transform: rotate(11deg) scale(1.08); opacity: 1; }
+}
+
+/* Desktop only: noticeable, quick feedback; only transform/opacity are animated. */
+@media (hover: hover) and (pointer: fine) and (min-width: 761px) {
+  #page-home.active .sticker-a {
+    animation: a5GardenFloat21 5.8s ease-in-out infinite;
+  }
+  #page-home.active .scribble-star {
+    animation: a5GardenSparkle21 4.1s ease-in-out infinite;
+    transform-origin: center;
+  }
+  .primary-button, .outline-button, .subtle-button, .text-button,
+  .social-button, .nav-item, .filter-pill, .tiny-action,
+  .reaction-pill, .top-icon-button, .person-view-button {
+    transition: transform .19s cubic-bezier(.2,.75,.25,1),
+                box-shadow .19s ease, background-color .19s ease,
+                border-color .19s ease, color .19s ease;
+  }
+  .primary-button:hover:not(:disabled) {
+    transform: translate3d(0, -3px, 0) scale(1.018);
+    box-shadow: 0 12px 24px rgba(191, 100, 129, .28);
+  }
+  .outline-button:hover:not(:disabled) {
+    transform: translate3d(0, -2px, 0);
+    box-shadow: 0 8px 18px rgba(126, 79, 104, .10);
+  }
+  .text-button:hover, .subtle-button:hover {
+    transform: translate3d(2px, -1px, 0);
+  }
+  .top-icon-button:hover:not(:disabled) {
+    transform: rotate(90deg) scale(1.07);
+    box-shadow: 0 7px 16px rgba(194, 110, 139, .22);
+  }
+  .nav-item:hover:not(.active) { transform: translate3d(3px, 0, 0); }
+  .filter-pill:hover, .reaction-pill:hover:not(:disabled) {
+    transform: translate3d(0, -2px, 0) scale(1.025);
+  }
+  .tiny-action:hover:not(:disabled) { transform: translate3d(0, -1px, 0) scale(1.08); }
+  .memory-card:hover, .person-card:hover, .on-this-day-item:hover {
+    transform: translate3d(0, -4px, 0) rotate(-.18deg);
+    box-shadow: var(--a5-garden-shadow);
+    border-color: #e9c5d3;
+  }
+  .page-title-row:hover h1::after { color: #c96b8d; transform: rotate(18deg) scale(1.18); }
+}
+
+/* Phones: distinct compact treatment, no hover simulation or continuous decorations. */
+@media (max-width: 760px), (hover: none), (pointer: coarse) {
+  .app-main {
+    background-image:
+      radial-gradient(ellipse at 95% 3%, rgba(244, 203, 220, .31), transparent 32%),
+      radial-gradient(ellipse at 3% 43%, rgba(220, 215, 248, .18), transparent 25%),
+      radial-gradient(circle at 18px 24px, rgba(207, 124, 157, .23) 0 1.2px, transparent 1.8px),
+      linear-gradient(180deg, #fffaf8, #fffaf8);
+    background-repeat: no-repeat, no-repeat, repeat, no-repeat;
+    background-size: 100% 410px, 100% 540px, 156px 178px, 100% 100%;
+    background-position: right top, left 35%, 0 0, 0 0;
+  }
+  #page-home.active .sticker-a, #page-home.active .scribble-star {
+    animation: none;
+  }
+  .primary-button:active:not(:disabled), .outline-button:active:not(:disabled),
+  .subtle-button:active:not(:disabled), .social-button:active:not(:disabled),
+  .tiny-action:active:not(:disabled), .reaction-pill:active:not(:disabled),
+  .filter-pill:active, .mobile-nav-item:active, .mobile-add:active {
+    transform: scale(.965);
+    transition-duration: .11s;
+  }
+  .mobile-nav-item > span:first-child { transition: transform .13s ease; }
+  .mobile-nav-item:active > span:first-child { transform: scale(.88) rotate(-5deg); }
+}
+
+/* Small devices: remove extra background layers to save paint/compositing work. */
+@media (max-width: 420px) {
+  .app-main {
+    background-image:
+      radial-gradient(ellipse at 100% 0%, rgba(244, 203, 220, .25), transparent 36%),
+      radial-gradient(circle at 20px 24px, rgba(207, 124, 157, .18) 0 1.1px, transparent 1.6px),
+      linear-gradient(180deg, #fffaf8, #fffaf8);
+    background-repeat: no-repeat, repeat, no-repeat;
+    background-size: 100% 330px, 190px 210px, 100% 100%;
+    background-position: right top, 0 0, 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #page-home.active .sticker-a, #page-home.active .scribble-star { animation: none !important; }
+  .primary-button, .outline-button, .subtle-button, .text-button,
+  .social-button, .nav-item, .filter-pill, .tiny-action,
+  .reaction-pill, .top-icon-button, .person-view-button,
+  .mobile-nav-item > span:first-child, .page-title-row h1::after {
+    transition: none !important;
+  }
+}
