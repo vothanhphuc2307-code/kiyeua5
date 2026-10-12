@@ -1,18 +1,106 @@
-/*
-  A5 Performance Guard v1.0
-  Additive stylesheet: load AFTER styles.css.
-  No backend, external fonts, images, or libraries.
-*/
+/* A5 Smart Motion Engine v2.0
+   Additive stylesheet. Load AFTER styles.css.
+   No external assets, fonts, libraries, or backend changes. */
 
-/* Keep scrolling and motion predictable on touch/low-power screens. */
-@media (max-width: 760px), (pointer: coarse) {
-  html { scroll-behavior: auto; }
+:root {
+  --a5-motion-quick: 130ms;
+  --a5-motion-ui: 175ms;
+  --a5-motion-ease: cubic-bezier(.2, .8, .2, 1);
+  --a5-motion-spring: cubic-bezier(.2, .85, .25, 1.12);
+}
 
-  body {
-    background-attachment: scroll !important;
+/* Avoid the default grey flash on taps while preserving keyboard focus. */
+button,
+[role="button"],
+a,
+summary {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Animate only specific properties; never transition: all. */
+.primary-button,
+.outline-button,
+.subtle-button,
+.text-button,
+.danger-button,
+.social-button,
+.tiny-action,
+.reaction-pill,
+.filter-pill,
+.mobile-nav-item,
+.mobile-add,
+.yearbook-open-button,
+.yearbook-page-button,
+.profile-archive-button,
+.profile-archive-pager button,
+.comment-open-button,
+.media-download-button,
+.notification-top-button,
+.nav-item,
+.yearbook-hero-link {
+  transition-property: transform, opacity, color, background-color, border-color, box-shadow;
+  transition-duration: var(--a5-motion-ui);
+  transition-timing-function: var(--a5-motion-ease);
+}
+
+/* Cute, but restrained: the background does not constantly move. */
+.primary-button {
+  box-shadow: 0 5px 0 rgba(153, 76, 108, .12), 0 8px 17px rgba(191, 100, 129, .13);
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .primary-button:hover:not(:disabled),
+  .outline-button:hover:not(:disabled),
+  .subtle-button:hover:not(:disabled),
+  .social-button:hover:not(:disabled),
+  .filter-pill:hover,
+  .tiny-action:hover:not(:disabled),
+  .reaction-pill:hover:not(:disabled),
+  .comment-open-button:hover:not(:disabled),
+  .media-download-button:hover:not(:disabled),
+  .notification-top-button:hover:not(:disabled),
+  .yearbook-open-button:hover:not(:disabled),
+  .yearbook-page-button:hover:not(:disabled),
+  .profile-archive-button:hover:not(:disabled),
+  .yearbook-hero-link:hover {
+    translate: 0 -2px;
   }
 
-  /* Blur is decorative; removing it is a safe fallback on touch devices. */
+  .primary-button:hover:not(:disabled) {
+    box-shadow: 0 6px 0 rgba(153, 76, 108, .12), 0 12px 22px rgba(191, 100, 129, .22);
+  }
+
+  .memory-card:hover,
+  .person-card:hover,
+  .profile-archive-tile:hover {
+    translate: 0 -2px;
+  }
+
+  .yearbook-intro-sticker {
+    animation: a5-soft-sticker-float 5.2s ease-in-out infinite;
+  }
+
+  .yearbook-cover-corner-one,
+  .yearbook-cover-corner-two {
+    transition: opacity var(--a5-motion-ui) var(--a5-motion-ease);
+  }
+
+  .yearbook-book-shell:hover .yearbook-cover-corner-one,
+  .yearbook-book-shell:hover .yearbook-cover-corner-two {
+    opacity: .92;
+  }
+}
+
+@keyframes a5-soft-sticker-float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -3px; }
+}
+
+/* Short, immediate tap feedback. Do not simulate hover on phones. */
+@media (hover: none), (pointer: coarse) {
+  html { scroll-behavior: auto; }
+  body { background-attachment: scroll !important; }
+
   .topbar,
   .mobile-nav,
   .modal-backdrop,
@@ -25,40 +113,24 @@
     backdrop-filter: none !important;
   }
 
-  .ambient,
-  .ambient-one,
-  .ambient-two {
-    filter: none !important;
-  }
-
-  /* Only animate inexpensive interaction properties, never transition: all. */
-  .primary-button,
-  .outline-button,
-  .subtle-button,
-  .text-button,
-  .danger-button,
-  .mobile-nav-item,
-  .mobile-add,
-  .yearbook-open-button,
-  .yearbook-page-button,
-  .reaction-pill,
-  .social-button,
-  .tiny-action {
-    transition-property: transform, opacity, color, background-color, border-color, box-shadow !important;
-    transition-duration: 140ms !important;
-    transition-timing-function: ease-out !important;
-  }
-
-  /* Interaction feedback stays short; no faux hover movement on touch. */
-  .primary-button:active,
-  .outline-button:active,
-  .subtle-button:active,
+  .primary-button:active:not(:disabled),
+  .outline-button:active:not(:disabled),
+  .subtle-button:active:not(:disabled),
+  .text-button:active:not(:disabled),
+  .danger-button:active:not(:disabled),
+  .social-button:active:not(:disabled),
+  .tiny-action:active:not(:disabled),
+  .reaction-pill:active:not(:disabled),
+  .filter-pill:active,
+  .mobile-nav-item:active,
   .mobile-add:active,
   .yearbook-open-button:active,
   .yearbook-page-button:active:not(:disabled),
-  .reaction-pill:active,
-  .social-button:active {
-    transform: scale(.985);
+  .profile-archive-button:active:not(:disabled),
+  .profile-archive-pager button:active:not(:disabled) {
+    transform: scale(.975);
+    translate: 0 0;
+    transition-duration: var(--a5-motion-quick);
   }
 
   .primary-button:hover,
@@ -66,39 +138,38 @@
   .subtle-button:hover,
   .text-button:hover,
   .danger-button:hover,
+  .social-button:hover,
+  .tiny-action:hover,
+  .reaction-pill:hover,
+  .filter-pill:hover,
   .mobile-nav-item:hover,
   .mobile-add:hover,
   .yearbook-open-button:hover,
-  .yearbook-page-button:hover:not(:disabled),
-  .reaction-pill:hover,
-  .social-button:hover,
-  .tiny-action:hover,
+  .yearbook-page-button:hover,
+  .profile-archive-button:hover,
   .memory-card:hover,
   .person-card:hover,
-  .yearbook-polaroid:hover {
-    transform: none;
+  .profile-archive-tile:hover,
+  .yearbook-polaroid:hover,
+  .yearbook-hero-link:hover {
+    translate: 0 0;
   }
+
+  .yearbook-intro-sticker { animation: none !important; }
 }
 
-/* Governor applies this class only on low-resource signals or repeated long tasks. */
+/* Reduced-resource mode: keep the UI responsive and readable, trimming decoration only. */
 html.a5-auto-lite .ambient,
 html.a5-auto-lite .ambient-one,
 html.a5-auto-lite .ambient-two,
 html.a5-auto-lite .doodle-left,
 html.a5-auto-lite .doodle-right,
-html.a5-auto-lite .title-doodle {
+html.a5-auto-lite .title-doodle,
+html.a5-auto-lite .nav-spark,
+html.a5-auto-lite .modal-sprinkle,
+html.a5-auto-lite .yearbook-intro-sticker {
   animation: none !important;
   filter: none !important;
-}
-
-html.a5-auto-lite .page-view.active,
-html.a5-auto-lite .modal-card,
-html.a5-auto-lite .media-viewer-card,
-html.a5-auto-lite .yearbook-cover,
-html.a5-auto-lite .yearbook-polaroid,
-html.a5-auto-lite .memory-card,
-html.a5-auto-lite .person-card {
-  animation: none !important;
 }
 
 html.a5-auto-lite .topbar,
@@ -121,11 +192,28 @@ html.a5-auto-lite .yearbook-book-shell {
   box-shadow: none !important;
 }
 
-/* Browsers already throttle hidden tabs; this explicitly pauses decorative work. */
+html.a5-auto-lite .primary-button,
+html.a5-auto-lite .outline-button,
+html.a5-auto-lite .subtle-button,
+html.a5-auto-lite .social-button,
+html.a5-auto-lite .memory-card,
+html.a5-auto-lite .person-card,
+html.a5-auto-lite .profile-archive-tile,
+html.a5-auto-lite .yearbook-polaroid {
+  transition-duration: 100ms !important;
+}
+
+/* Hidden tab: stop decorative CSS work until the tab is visible again. */
 html.a5-tab-hidden *,
 html.a5-tab-hidden *::before,
 html.a5-tab-hidden *::after {
   animation-play-state: paused !important;
+}
+
+/* Visible keyboard focus; no JavaScript needed. */
+:focus-visible {
+  outline: 2px solid rgba(194, 108, 146, .75);
+  outline-offset: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {
