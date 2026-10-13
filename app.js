@@ -348,6 +348,7 @@
     const own = a5ChatPresence.get(currentUser.id);
     a5ChatShowOwnPresence = own?.show_presence !== false;
     renderA5ChatContactOptions();
+    queueA5ChatPresenceUiUpdate();
   }
 
   function renderA5ChatThreadState() {
@@ -370,6 +371,7 @@
       avatar.classList.toggle('is-group', isGroup);
       avatar.innerHTML = isGroup ? '<span>🌷</span>' : (profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="" loading="lazy"/>` : `<span>${shortInitial(displayName(profile))}</span>`);
       avatar.classList.toggle('is-online', Boolean(presence?.online));
+      avatar.classList.toggle('is-offline', !isGroup && !presence?.online);
     }
     $('#a5ChatThreadName').textContent = conversation.displayTitle || 'Cuộc trò chuyện';
     $('#a5ChatThreadStatus').textContent = isGroup ? `${conversation.memberCount || profiles.length} thành viên · Phòng chung 12A5` : (presence?.label || 'Thành viên A5');
@@ -597,6 +599,10 @@
       if (data) { a5ChatPresence.set(currentUser.id, data); a5ChatShowOwnPresence = data.show_presence !== false; }
       a5ChatFeatureAvailable = true;
       await writeA5ChatPresence(document.visibilityState === 'visible');
+      // Seed statuses for the classmates visible under the existing RLS policy at login.
+      // Realtime only sends changes after subscription; it does not provide an initial snapshot by itself.
+      await loadA5ChatPresenceRows();
+      queueA5ChatPresenceUiUpdate();
       a5ChatPresenceTimer = window.setInterval(() => {
         if (document.visibilityState === 'visible' && currentUser) void writeA5ChatPresence(true);
       }, 60000);
@@ -641,21 +647,43 @@
     if (a5ChatPresenceRenderTimer) window.clearTimeout(a5ChatPresenceRenderTimer);
     a5ChatPresenceRenderTimer = window.setTimeout(() => {
       a5ChatPresenceRenderTimer = null;
-      if (activeTab !== 'chat') return;
-      const onlineCount = [...a5ChatPresence.entries()].filter(([id]) => id !== currentUser?.id && a5ChatPresenceFor(id).online).length;
-      const summary = $('#a5ChatOnlineSummary');
-      if (summary) summary.textContent = onlineCount ? `${onlineCount} bạn đang hoạt động` : 'Một góc nhỏ để tìm nhau';
+      // Account indicators must update on People, Home, Gallery and Profile too—not only inside Messenger.
+      $$('[data-a5-presence-user]').forEach(element => {
+        const userId = element.dataset.a5PresenceUser;
+        if (!userId) return;
+        const presence = a5ChatPresenceFor(userId);
+        element.classList.toggle('is-online', presence.online);
+        element.classList.toggle('is-offline', !presence.online);
+        const profile = profiles.find(person => person.id === userId);
+        element.title = `${displayName(profile || {})} · ${presence.label}`;
+      });
+      $$('[data-a5-presence-status-user]').forEach(element => {
+        const presence = a5ChatPresenceFor(element.dataset.a5PresenceStatusUser);
+        const label = element.querySelector('[data-a5-presence-label]');
+        if (label) label.textContent = presence.label;
+        else element.textContent = presence.label;
+        element.classList.toggle('is-online', presence.online);
+        element.classList.toggle('is-offline', !presence.online);
+      });
+      // Keep existing Messenger labels and avatar dots in sync as well.
       $$('[data-a5-chat-status-user]').forEach(element => {
         const presence = a5ChatPresenceFor(element.dataset.a5ChatStatusUser);
         element.textContent = presence.label;
         element.classList.toggle('is-online', presence.online);
+        element.classList.toggle('is-offline', !presence.online);
       });
       $$('[data-a5-chat-user-id]').forEach(element => {
-        element.classList.toggle('is-online', a5ChatPresenceFor(element.dataset.a5ChatUserId).online);
+        const presence = a5ChatPresenceFor(element.dataset.a5ChatUserId);
+        element.classList.toggle('is-online', presence.online);
+        element.classList.toggle('is-offline', !presence.online);
       });
+      const onlineCount = [...a5ChatPresence.entries()].filter(([id]) => id !== currentUser?.id && a5ChatPresenceFor(id).online).length;
+      const summary = $('#a5ChatOnlineSummary');
+      if (summary) summary.textContent = onlineCount ? `${onlineCount} bạn đang hoạt động` : 'Một góc nhỏ để tìm nhau';
+      if (activeTab !== 'chat') return;
       const conversation = a5ChatCurrentConversation();
       if (conversation) renderA5ChatThreadHeader(conversation);
-    }, 650);
+    }, 450);
   }
 
   function setupA5ChatRealtime() {
@@ -1886,7 +1914,12 @@
   function avatarHTML(profile, className = 'avatar') {
     const url = profile?.avatar_url;
     const label = displayName(profile);
-    return `<span class="${className}" title="${escapeAttr(label)}">${url ? `<img src="${escapeAttr(url)}" alt="Ảnh đại diện ${escapeAttr(label)}" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(label)}</span>`;
+    const userId = profile?.id || '';
+    const presence = userId ? a5ChatPresenceFor(userId) : null;
+    const presenceClass = presence ? ` a5-presence-avatar ${presence.online ? 'is-online' : 'is-offline'}` : '';
+    const presenceData = userId ? ` data-a5-presence-user="${escapeAttr(userId)}"` : '';
+    const title = presence ? `${label} · ${presence.label}` : label;
+    return `<span class="${className}${presenceClass}" title="${escapeAttr(title)}"${presenceData}>${url ? `<img src="${escapeAttr(url)}" alt="Ảnh đại diện ${escapeAttr(label)}" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(label)}</span>`;
   }
   function normalizeReactionEmoji(value) {
     const emoji = String(value || '').normalize('NFC');
@@ -2187,7 +2220,8 @@
       const bio = profile.bio || 'đang viết tiếp câu chuyện thanh xuân...';
       const dream = profile.dream_job ? `<p class="person-dream-teaser">✨ Mơ ước: ${escapeHTML(profile.dream_job)}</p>` : '';
       const seat = classroomSeats.find(entry => entry.user_id === profile.id);
-      return `<article class="person-card" data-action="view-profile" data-user-id="${escapeAttr(profile.id)}" tabindex="0" role="button" style="--person-tint:${tint[index % tint.length]};animation-delay:${Math.min(index * 30, 240)}ms"><div class="person-avatar">${profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện ${escapeAttr(displayName(profile))}" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(displayName(profile))}</div><h3>${escapeHTML(displayName(profile))}</h3>${officerBadgeHTML(profile.id)}<p class="person-nickname">${escapeHTML(profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5')}</p><p class="person-bio">${escapeHTML(bio)}</p>${dream}${seat ? `<span class="person-seat-tag">🪑 Khu ${escapeHTML(seat.row_code)} · Bàn ${String(seat.desk_number).padStart(2, '0')} · Chỗ ${seat.seat_number}</span>` : ''}<div class="person-statline"><span>▧ <b>${ownMedia.filter(item => item.media_type === 'photo').length}</b> ảnh</span><span>▷ <b>${ownMedia.filter(item => item.media_type === 'video').length}</b> video</span></div><span class="person-view-button">Ghé thăm góc nhỏ ↗</span></article>`;
+      const presence = a5ChatPresenceFor(profile.id);
+      return `<article class="person-card" data-action="view-profile" data-user-id="${escapeAttr(profile.id)}" tabindex="0" role="button" style="--person-tint:${tint[index % tint.length]};animation-delay:${Math.min(index * 30, 240)}ms"><div class="person-avatar a5-presence-avatar ${presence.online ? 'is-online' : 'is-offline'}" data-a5-presence-user="${escapeAttr(profile.id)}" title="${escapeAttr(`${displayName(profile)} · ${presence.label}`)}">${profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện ${escapeAttr(displayName(profile))}" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(displayName(profile))}</div><h3>${escapeHTML(displayName(profile))}</h3><p class="person-presence-line ${presence.online ? 'is-online' : 'is-offline'}" data-a5-presence-status-user="${escapeAttr(profile.id)}"><i class="a5-presence-inline-dot" aria-hidden="true"></i><span data-a5-presence-label>${escapeHTML(presence.label)}</span></p>${officerBadgeHTML(profile.id)}<p class="person-nickname">${escapeHTML(profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5')}</p><p class="person-bio">${escapeHTML(bio)}</p>${dream}${seat ? `<span class="person-seat-tag">🪑 Khu ${escapeHTML(seat.row_code)} · Bàn ${String(seat.desk_number).padStart(2, '0')} · Chỗ ${seat.seat_number}</span>` : ''}<div class="person-statline"><span>▧ <b>${ownMedia.filter(item => item.media_type === 'photo').length}</b> ảnh</span><span>▷ <b>${ownMedia.filter(item => item.media_type === 'video').length}</b> video</span></div><span class="person-view-button">Ghé thăm góc nhỏ ↗</span></article>`;
     }).join('');
     $('#peopleEmpty').classList.toggle('hidden', people.length !== 0);
     $('#peopleGrid').classList.toggle('hidden', people.length === 0);
@@ -2774,9 +2808,15 @@
     const profile = currentProfile;
     const name = displayName(profile);
     $('#sidebarUser').innerHTML = `${avatarHTML(profile)}<div class="sidebar-user-info"><strong>${escapeHTML(name)}</strong><small>${escapeHTML(profile.nickname || 'Thành viên A5')}</small></div>`;
-    $('#topAvatarButton').innerHTML = profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(name);
+    const topAvatarButton = $('#topAvatarButton');
+    topAvatarButton.innerHTML = profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(name);
+    topAvatarButton.dataset.a5PresenceUser = currentUser.id;
+    topAvatarButton.classList.add('a5-presence-avatar');
     $('#helloName').textContent = profile.nickname || name.split(/\s+/)[0] || 'người bạn A5';
-    $('#profileLargeAvatar').innerHTML = profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(name);
+    const profileLargeAvatar = $('#profileLargeAvatar');
+    profileLargeAvatar.innerHTML = profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(name);
+    profileLargeAvatar.dataset.a5PresenceUser = currentUser.id;
+    profileLargeAvatar.classList.add('a5-presence-avatar');
     $('#profileDisplayName').textContent = name;
     $('#profileNickname').textContent = profile.nickname ? `“${profile.nickname}”` : 'chưa có biệt danh';
     $('#profileBio').textContent = profile.bio || 'Mỗi ngày đi học là một trang trong cuốn lưu bút.';
@@ -4321,7 +4361,10 @@
     if (archiveState.loading) { archiveState.requestToken += 1; archiveState.loading = false; }
     archiveState.view = 'preview';
     const own = mediaItems.filter(item => item.user_id === id);
-    $('#publicProfileAvatar').innerHTML = profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(displayName(profile));
+    const publicProfileAvatar = $('#publicProfileAvatar');
+    publicProfileAvatar.innerHTML = profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(displayName(profile));
+    publicProfileAvatar.dataset.a5PresenceUser = profile.id;
+    publicProfileAvatar.classList.add('a5-presence-avatar');
     $('#publicProfileCover').style.background = `linear-gradient(115deg, ${safeColor(profile.profile_color || '#f6dce5')}, #fff0de 70%, #ece5ff)`;
     $('#publicProfileName').textContent = displayName(profile);
     $('#publicProfileNickname').textContent = profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5';

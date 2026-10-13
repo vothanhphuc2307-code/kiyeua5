@@ -2899,7 +2899,7 @@ textarea:focus-visible, select:focus-visible, [tabindex]:focus-visible {
 .a5-chat-back-button { display:none; flex:0 0 34px; width:34px; height:34px; border:1px solid #f0dde4; border-radius:12px; background:#fff7fa; color:#a76d86; font-size:20px; cursor:pointer; }
 .a5-chat-thread-avatar { position:relative; flex:0 0 45px; display:grid; place-items:center; width:45px; height:45px; overflow:hidden; border-radius:16px; background:linear-gradient(145deg,#f7dce7,#e8e1fa); color:#936981; font-size:15px; font-weight:900; }
 .a5-chat-thread-avatar img { width:100%; height:100%; object-fit:cover; }
-.a5-chat-thread-avatar.is-online:after { content:""; position:absolute; right:0; bottom:0; width:11px; height:11px; border:2px solid white; border-radius:50%; background:#49b879; }
+
 .a5-chat-thread-avatar.is-group { background:#e8f2da; font-size:22px; }
 .a5-chat-thread-title { flex:1; min-width:0; }
 .a5-chat-thread-title h2 { margin:0 0 5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#6f5261; font-size:15px; }
@@ -2984,3 +2984,48 @@ textarea:focus-visible, select:focus-visible, [tabindex]:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .a5-chat-new-button,.a5-chat-conversation,.a5-chat-send-button { transition:none !important; }
 }
+
+/* A5 presence indicators — gray = offline/hidden/unknown, green = currently active.
+   Dots are tiny, static pseudo-elements; no extra DOM or animation loops are added. */
+.a5-presence-avatar { position: relative; }
+.a5-presence-avatar::after {
+  content: ""; position: absolute; right: 1px; bottom: 1px; z-index: 5;
+  width: 10px; height: 10px; border: 2px solid #fffdfa; border-radius: 50%;
+  background: #aeb4bd; box-shadow: 0 1px 2px rgba(69, 73, 83, .18);
+  pointer-events: none; transition: background-color .16s ease, box-shadow .16s ease;
+}
+.a5-presence-avatar.is-online::after {
+  background: #31b86a; box-shadow: 0 0 0 2px rgba(49, 184, 106, .13);
+}
+.a5-presence-avatar.is-offline::after { background: #aeb4bd; }
+.person-avatar.a5-presence-avatar::after {
+  right: 1px; bottom: 1px; width: 12px; height: 12px; border-width: 3px;
+}
+.person-presence-line {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  max-width: 100%; margin: 3px 0 6px; overflow: hidden; white-space: nowrap;
+  color: #9fa6b0; font-size: 8px; line-height: 1.35; font-weight: 700;
+}
+.person-presence-line > span { overflow: hidden; text-overflow: ellipsis; }
+.a5-presence-inline-dot {
+  display: inline-block; flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%;
+  background: #aeb4bd; box-shadow: 0 0 0 2px rgba(174, 180, 189, .12);
+}
+.person-presence-line.is-online { color: #3b9c61; }
+.person-presence-line.is-online .a5-presence-inline-dot { background: #31b86a; box-shadow: 0 0 0 2px rgba(49, 184, 106, .13); }
+.person-presence-line.is-offline { color: #9fa6b0; }
+.person-presence-line.is-offline .a5-presence-inline-dot { background: #aeb4bd; }
+.a5-chat-thread-avatar:not(.is-group)::after {
+  content: ""; position: absolute; right: 0; bottom: 0; width: 11px; height: 11px;
+  border: 2px solid #fff; border-radius: 50%; background: #aeb4bd;
+}
+.a5-chat-thread-avatar.is-online:not(.is-group)::after { background: #31b86a; box-shadow: 0 0 0 2px rgba(49, 184, 106, .12); }
+.a5-chat-thread-avatar.is-group::after { display: none; }
+@media (max-width: 680px) {
+  .person-presence-line { margin: 2px 0 5px; font-size: 7px; gap: 4px; }
+  .person-avatar.a5-presence-avatar::after { width: 11px; height: 11px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .a5-presence-avatar::after { transition: none; }
+}
+
