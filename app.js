@@ -106,6 +106,604 @@
   let officersFeatureAvailable = false;
   let isA5SiteAdmin = false;
 
+  // A5 Messenger phase 1: secure private/group chat and activity presence.
+  const A5_CHAT_CLASS_ROOM_ID = 'a5000000-0000-4000-8000-000000000001';
+  const A5_CHAT_PAGE_SIZE = 50;
+  let a5ChatConversations = [];
+  let a5ChatSelectedConversationId = null;
+  let a5ChatMessages = [];
+  let a5ChatHasOlderMessages = false;
+  let a5ChatLoadingMessages = false;
+  let a5ChatLoadingInbox = false;
+  let a5ChatSending = false;
+  let a5ChatFeatureAvailable = false;
+  let a5ChatFeatureError = '';
+  let a5ChatPresence = new Map();
+  let a5ChatShowOwnPresence = true;
+  let a5ChatPresenceTimer = null;
+  let a5ChatPresenceLifecycleBound = false;
+  let a5ChatPresenceRenderTimer = null;
+  let a5ChatRealtimeChannel = null;
+  let a5ChatRealtimeUserId = null;
+  let a5ChatLastMessageCursor = null;
+
+  function ensureA5ChatMarkup() {
+    const mainNav = $('.main-nav');
+    if (mainNav && !mainNav.querySelector('[data-tab="chat"]')) {
+      const galleryNav = mainNav.querySelector('[data-tab="gallery"]');
+      galleryNav?.insertAdjacentHTML('afterend', '<button class="nav-item a5-chat-nav-item" data-tab="chat"><span class="nav-icon">💬</span><span>Trò chuyện</span><span class="a5-chat-nav-badge hidden" id="a5ChatNavBadge">0</span></button>');
+    }
+    const mobileNav = $('.mobile-nav');
+    if (mobileNav && !mobileNav.querySelector('[data-tab="chat"]')) {
+      const galleryNav = mobileNav.querySelector('[data-tab="gallery"]');
+      galleryNav?.insertAdjacentHTML('afterend', '<button class="mobile-nav-item a5-chat-mobile-nav" data-tab="chat" aria-label="Trò chuyện"><span>💬</span><small>Tin nhắn</small><b class="a5-chat-nav-badge hidden" id="a5ChatMobileBadge">0</b></button>');
+    }
+    const pageContent = $('.page-content');
+    if (!pageContent || $('#page-chat')) return;
+    pageContent.insertAdjacentHTML('beforeend', `
+      <section class="page-view a5-chat-page" id="page-chat" aria-labelledby="a5ChatPageTitle">
+        <div class="a5-chat-page-heading">
+          <div><span class="section-overline">A5 · KEEP IN TOUCH</span><h1 id="a5ChatPageTitle">Góc trò chuyện <span aria-hidden="true">♡</span></h1><p>Nói với nhau vài câu hôm nay, để sau này vẫn tìm thấy nhau.</p></div>
+          <div class="a5-chat-online-summary"><span class="a5-chat-online-dot"></span><span id="a5ChatOnlineSummary">Kết nối cùng A5</span></div>
+        </div>
+        <div class="a5-chat-layout" id="a5ChatLayout">
+          <aside class="a5-chat-inbox-panel" aria-label="Danh sách cuộc trò chuyện">
+            <div class="a5-chat-inbox-heading"><div><span class="a5-chat-eyebrow">YOUR LITTLE INBOX</span><h2>Tin nhắn <span>✉</span></h2></div><button type="button" class="a5-chat-new-button" data-action="chat-toggle-new" aria-expanded="false" aria-controls="a5ChatNewDirectPanel">＋ Nhắn mới</button></div>
+            <div id="a5ChatNewDirectPanel" class="a5-chat-new-direct hidden">
+              <form id="a5ChatStartDirectForm"><label for="a5ChatContactSelect">Chọn một bạn A5</label><select id="a5ChatContactSelect" required><option value="">Đang tải danh sách...</option></select><button type="submit" class="primary-button full-width">Mở cuộc trò chuyện ♡</button></form>
+            </div>
+            <label class="a5-chat-search"><span aria-hidden="true">⌕</span><input type="search" id="a5ChatSearch" placeholder="Tìm người hoặc cuộc trò chuyện..." autocomplete="off" aria-label="Tìm cuộc trò chuyện"/></label>
+            <div class="a5-chat-list-meta"><span id="a5ChatConversationCount">Cuộc trò chuyện</span><span>♡</span></div>
+            <div class="a5-chat-conversation-list" id="a5ChatConversationList"><div class="a5-chat-loading"><span>✿</span><p>Đang mở hộp thư...</p></div></div>
+            <div class="a5-chat-presence-setting"><span class="a5-chat-presence-setting-icon">🌿</span><span><strong>Trạng thái của tớ</strong><small id="a5ChatPresenceSettingText">Đang kiểm tra...</small></span><button type="button" class="a5-chat-presence-toggle" data-action="chat-toggle-presence" id="a5ChatPresenceToggle" disabled>...</button></div>
+          </aside>
+          <section class="a5-chat-thread-panel" aria-label="Nội dung trò chuyện">
+            <div class="a5-chat-empty-thread" id="a5ChatEmptyPanel"><div class="a5-chat-empty-art"><span class="a5-chat-empty-star">✦</span><span class="a5-chat-empty-envelope">✉</span><span class="a5-chat-empty-heart">♡</span></div><span class="a5-chat-eyebrow">A LITTLE NOTE TO A FRIEND</span><h2>Mình nói chuyện một chút nha?</h2><p>Chọn một cuộc trò chuyện ở bên cạnh hoặc nhắn lời đầu tiên cho một người bạn A5.</p><button type="button" class="primary-button" data-action="chat-toggle-new">Bắt đầu nhắn tin ♡</button></div>
+            <div class="a5-chat-thread hidden" id="a5ChatThreadPanel">
+              <header class="a5-chat-thread-header"><button type="button" class="a5-chat-back-button" data-action="chat-back-to-list" aria-label="Quay lại danh sách">←</button><div class="a5-chat-thread-avatar" id="a5ChatThreadAvatar">♡</div><div class="a5-chat-thread-title"><h2 id="a5ChatThreadName">Cuộc trò chuyện</h2><p id="a5ChatThreadStatus">A5 · thương mến</p></div><span class="a5-chat-thread-kind" id="a5ChatThreadKind">♡</span></header>
+              <div class="a5-chat-date-note">✦ Mỗi tin nhắn là một mẩu chuyện nhỏ ✦</div>
+              <div class="a5-chat-older-wrap"><button type="button" class="outline-button hidden" data-action="chat-load-older" id="a5ChatOlderButton">Tải tin nhắn cũ hơn</button></div>
+              <div class="a5-chat-messages" id="a5ChatMessages" role="log" aria-live="polite" aria-relevant="additions text"><div class="a5-chat-loading"><span>♡</span><p>Đang tìm lại tin nhắn...</p></div></div>
+              <form class="a5-chat-composer" id="a5ChatComposerForm"><textarea id="a5ChatComposerInput" rows="1" maxlength="4000" placeholder="Viết một lời nhắn nho nhỏ..." aria-label="Nội dung tin nhắn" required></textarea><div class="a5-chat-composer-bottom"><span>Enter để gửi · Shift + Enter xuống dòng</span><button type="submit" class="a5-chat-send-button" id="a5ChatSendButton" aria-label="Gửi tin nhắn">Gửi ♡</button></div></form>
+            </div>
+          </section>
+        </div>
+      </section>`);
+  }
+
+  function a5ChatAvatar(profile, online = false, extraClass = '') {
+    const name = displayName(profile || {});
+    const image = profile?.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="" loading="lazy" decoding="async"/>` : `<span>${shortInitial(name)}</span>`;
+    return `<span class="a5-chat-avatar ${extraClass}${online ? ' is-online' : ''}" data-a5-chat-user-id="${escapeAttr(profile?.id || '')}">${image}<i aria-hidden="true"></i></span>`;
+  }
+
+  function a5ChatPresenceFor(userId) {
+    const row = a5ChatPresence.get(userId);
+    if (!row) return { online: false, label: userId === currentUser?.id ? 'Chưa bật trạng thái' : 'Ngoại tuyến hoặc đang ẩn trạng thái' };
+    if (row.show_presence === false && userId !== currentUser?.id) return { online: false, label: 'Đang ẩn trạng thái' };
+    const lastSeen = Date.parse(row.last_seen_at || '');
+    const online = Boolean(row.is_online && Number.isFinite(lastSeen) && Date.now() - lastSeen < 120000);
+    if (online) return { online: true, label: 'Đang hoạt động' };
+    if (!Number.isFinite(lastSeen)) return { online: false, label: 'Chưa hoạt động gần đây' };
+    const elapsed = Math.max(0, Date.now() - lastSeen);
+    const minute = 60000, hour = 60 * minute, day = 24 * hour, month = 30 * day, year = 365 * day;
+    if (elapsed < minute) return { online: false, label: 'Vừa hoạt động' };
+    if (elapsed < hour) {
+      const n = Math.max(1, Math.floor(elapsed / minute));
+      return { online: false, label: `Hoạt động ${n} phút trước` };
+    }
+    if (elapsed < day) return { online: false, label: `Hoạt động ${Math.floor(elapsed / hour)} giờ trước` };
+    if (elapsed < month) return { online: false, label: `Hoạt động ${Math.floor(elapsed / day)} ngày trước` };
+    if (elapsed < year) return { online: false, label: `Hoạt động ${Math.floor(elapsed / month)} tháng trước` };
+    return { online: false, label: `Hoạt động ${Math.floor(elapsed / year)} năm trước` };
+  }
+
+  function a5ChatSafeTime(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '';
+    const now = new Date();
+    const sameDay = date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
+    return sameDay ? date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+  }
+
+  function renderA5ChatPresenceSetting() {
+    const text = $('#a5ChatPresenceSettingText');
+    const button = $('#a5ChatPresenceToggle');
+    if (!text || !button) return;
+    const own = a5ChatPresence.get(currentUser?.id);
+    a5ChatShowOwnPresence = own?.show_presence !== false;
+    text.textContent = a5ChatShowOwnPresence ? 'Bạn bè có thể thấy lúc cậu hoạt động' : 'Đang ẩn online và lần hoạt động cuối';
+    button.textContent = a5ChatShowOwnPresence ? 'Ẩn' : 'Hiện';
+    button.setAttribute('aria-pressed', String(!a5ChatShowOwnPresence));
+    button.disabled = !a5ChatFeatureAvailable;
+  }
+
+  function renderA5ChatInbox() {
+    const list = $('#a5ChatConversationList');
+    if (!list) return;
+    renderA5ChatPresenceSetting();
+    if (!a5ChatFeatureAvailable) {
+      const msg = a5ChatFeatureError || 'Cần cài đặt Chat v1 trước khi dùng.';
+      list.innerHTML = `<div class="a5-chat-setup-card"><span>🛠️</span><strong>Hộp thư chưa được bật</strong><p>${escapeHTML(msg)}</p><small>Trong ZIP có file <code>supabase/a5-chat-phase1.sql</code>. Sao lưu trước, rồi chạy file đó một lần trong Supabase SQL Editor.</small></div>`;
+      $('#a5ChatConversationCount').textContent = 'Chưa kết nối';
+      $('#a5ChatOnlineSummary').textContent = 'Đang chờ cấu hình';
+      ['#a5ChatNavBadge','#a5ChatMobileBadge'].forEach(selector => $(selector)?.classList.add('hidden'));
+      return;
+    }
+    const query = ($('#a5ChatSearch')?.value || '').trim().toLocaleLowerCase('vi');
+    const filtered = a5ChatConversations.filter(conversation => {
+      const haystack = `${conversation.displayTitle} ${conversation.counterpart ? displayName(conversation.counterpart) : ''} ${conversation.last_message_preview || ''}`.toLocaleLowerCase('vi');
+      return !query || haystack.includes(query);
+    });
+    const unreadConversations = a5ChatConversations.filter(conversation => conversation.unread).length;
+    ['#a5ChatNavBadge','#a5ChatMobileBadge'].forEach(selector => {
+      const badge = $(selector);
+      if (!badge) return;
+      badge.textContent = unreadConversations > 9 ? '9+' : String(unreadConversations);
+      badge.classList.toggle('hidden', unreadConversations === 0);
+    });
+    const onlineCount = [...a5ChatPresence.entries()].filter(([id]) => id !== currentUser?.id && a5ChatPresenceFor(id).online).length;
+    $('#a5ChatOnlineSummary').textContent = onlineCount ? `${onlineCount} bạn đang hoạt động` : 'Một góc nhỏ để tìm nhau';
+    $('#a5ChatConversationCount').textContent = `${a5ChatConversations.length} cuộc trò chuyện`;
+    if (!filtered.length) {
+      list.innerHTML = `<div class="a5-chat-list-empty"><span>💌</span><strong>${query ? 'Chưa tìm thấy cuộc trò chuyện' : 'Hộp thư đang chờ tin nhắn'}</strong><p>${query ? 'Thử tên khác nhé.' : 'Phòng chung 12A5 đã sẵn sàng. Cậu cũng có thể nhắn riêng một người bạn.'}</p></div>`;
+      return;
+    }
+    list.innerHTML = filtered.map(conversation => {
+      const isGroup = conversation.kind === 'group';
+      const profile = conversation.counterpart || {};
+      const presence = !isGroup ? a5ChatPresenceFor(profile.id) : null;
+      const selected = conversation.id === a5ChatSelectedConversationId;
+      const unread = Boolean(conversation.unread);
+      const avatar = isGroup ? '<span class="a5-chat-avatar a5-chat-group-avatar"><span>🌷</span></span>' : a5ChatAvatar(profile, presence?.online, 'a5-chat-list-avatar');
+      const preview = conversation.last_message_preview ? `${conversation.last_message_sender_id === currentUser?.id ? 'Cậu: ' : ''}${conversation.last_message_preview}` : (isGroup ? 'Gửi lời nhắn đầu tiên cho cả lớp ♡' : 'Bắt đầu một câu chuyện nhỏ ♡');
+      return `<button type="button" class="a5-chat-conversation${selected ? ' is-selected' : ''}${unread ? ' has-unread' : ''}" data-action="chat-open-conversation" data-conversation-id="${escapeAttr(conversation.id)}" aria-current="${selected ? 'true' : 'false'}">${avatar}<span class="a5-chat-conversation-copy"><span class="a5-chat-conversation-top"><strong>${escapeHTML(conversation.displayTitle)}</strong><time>${escapeHTML(a5ChatSafeTime(conversation.last_message_at))}</time></span><span class="a5-chat-conversation-preview">${escapeHTML(preview)}</span><span class="a5-chat-conversation-status${presence?.online ? ' is-online' : ''}"${!isGroup && profile.id ? ` data-a5-chat-status-user="${escapeAttr(profile.id)}"` : ''}>${isGroup ? 'Phòng chung · 12A5' : escapeHTML(presence?.label || 'Bạn A5')}</span></span>${unread ? '<i class="a5-chat-unread-dot" aria-label="Tin nhắn chưa đọc"></i>' : ''}</button>`;
+    }).join('');
+  }
+
+  function renderA5ChatContactOptions() {
+    const select = $('#a5ChatContactSelect');
+    if (!select) return;
+    const selected = select.value;
+    const people = profiles.filter(profile => profile.id && profile.id !== currentUser?.id)
+      .sort((a, b) => displayName(a).localeCompare(displayName(b), 'vi'));
+    select.innerHTML = `<option value="">Chọn thành viên...</option>${people.map(profile => {
+      const presence = a5ChatPresenceFor(profile.id);
+      return `<option value="${escapeAttr(profile.id)}">${escapeHTML(displayName(profile))}${presence.online ? ' · đang hoạt động' : ''}</option>`;
+    }).join('')}`;
+    if (people.some(profile => profile.id === selected)) select.value = selected;
+  }
+
+  async function loadA5ChatInbox(options = {}) {
+    if (!supabase || !currentUser || a5ChatLoadingInbox) return;
+    a5ChatLoadingInbox = true;
+    if (!options.silent && !a5ChatFeatureAvailable && $('#a5ChatConversationList')) {
+      $('#a5ChatConversationList').innerHTML = '<div class="a5-chat-loading"><span>✿</span><p>Đang mở hộp thư...</p></div>';
+    }
+    try {
+      const joined = await supabase.rpc('a5_chat_join_class_room');
+      if (joined.error) throw joined.error;
+      const membershipResult = await supabase.from('a5_chat_members').select('conversation_id,last_read_at').eq('user_id', currentUser.id);
+      if (membershipResult.error) throw membershipResult.error;
+      const memberships = membershipResult.data || [];
+      const ids = [...new Set(memberships.map(row => row.conversation_id).filter(Boolean))];
+      if (!ids.length) throw new Error('Chưa tìm thấy quyền tham gia phòng chat. Hãy chạy migration Chat v1.');
+      const [conversationResult, memberResult] = await Promise.all([
+        supabase.from('a5_chat_conversations').select('id,kind,title,member_one_id,member_two_id,last_message_at,last_message_preview,last_message_sender_id,created_at').in('id', ids),
+        supabase.from('a5_chat_members').select('conversation_id,user_id,last_read_at').in('conversation_id', ids)
+      ]);
+      if (conversationResult.error) throw conversationResult.error;
+      if (memberResult.error) throw memberResult.error;
+      const membershipById = new Map(memberships.map(row => [row.conversation_id, row]));
+      const membersByConversation = new Map();
+      for (const row of memberResult.data || []) {
+        if (!membersByConversation.has(row.conversation_id)) membersByConversation.set(row.conversation_id, []);
+        membersByConversation.get(row.conversation_id).push(row);
+      }
+      a5ChatConversations = (conversationResult.data || []).map(row => {
+        const myMembership = membershipById.get(row.id);
+        const people = membersByConversation.get(row.id) || [];
+        const otherId = people.find(person => person.user_id !== currentUser.id)?.user_id || (row.member_one_id === currentUser.id ? row.member_two_id : row.member_one_id);
+        const counterpart = profiles.find(profile => profile.id === otherId) || null;
+        const readAt = Date.parse(myMembership?.last_read_at || '');
+        const messageAt = Date.parse(row.last_message_at || '');
+        const unread = Boolean(row.last_message_sender_id && row.last_message_sender_id !== currentUser.id && Number.isFinite(messageAt) && (!Number.isFinite(readAt) || messageAt > readAt));
+        return { ...row, counterpart, displayTitle: row.kind === 'group' ? (row.title || 'Phòng chat 12A5') : displayName(counterpart || {}), unread, last_read_at: myMembership?.last_read_at || null, memberCount: people.length };
+      }).sort((a, b) => {
+        if (a.kind === 'group' && b.kind !== 'group') return -1;
+        if (b.kind === 'group' && a.kind !== 'group') return 1;
+        return Date.parse(b.last_message_at || b.created_at || 0) - Date.parse(a.last_message_at || a.created_at || 0);
+      });
+      a5ChatFeatureAvailable = true;
+      a5ChatFeatureError = '';
+      await loadA5ChatPresenceRows();
+      renderA5ChatInbox();
+      renderA5ChatContactOptions();
+      if (a5ChatSelectedConversationId) {
+        const selected = a5ChatConversations.find(row => row.id === a5ChatSelectedConversationId);
+        if (selected) renderA5ChatThreadHeader(selected);
+        else { a5ChatSelectedConversationId = null; a5ChatMessages = []; renderA5ChatThreadState(); }
+      }
+    } catch (error) {
+      console.warn('A5 chat inbox is unavailable:', error?.message || error);
+      const message = String(error?.message || error || 'Lỗi không xác định');
+      const migrationMissing = /a5_chat_|a5_chat_|a5-chat/i.test(message) && /(does not exist|not found|schema cache|could not find|function .* not found|chưa tìm thấy quyền)/i.test(message);
+      a5ChatFeatureAvailable = false;
+      a5ChatFeatureError = migrationMissing
+        ? 'Cần chạy supabase/a5-chat-phase1.sql trong Supabase SQL Editor một lần.'
+        : 'Chưa tải được hộp thư. Kiểm tra chính sách SQL và thử mở lại sau.';
+      renderA5ChatInbox();
+      if (!options.silent) toast('Chưa mở được hộp thư A5. Xem hướng dẫn Chat v1 trong ZIP nhé.', 'error', 5000);
+    } finally {
+      a5ChatLoadingInbox = false;
+    }
+  }
+
+  async function loadA5ChatPresenceRows() {
+    if (!supabase || !currentUser) return;
+    const { data, error } = await supabase.from('a5_chat_presence').select('user_id,last_seen_at,is_online,show_presence').limit(200);
+    if (error) throw error;
+    a5ChatPresence = new Map((data || []).map(row => [row.user_id, row]));
+    const own = a5ChatPresence.get(currentUser.id);
+    a5ChatShowOwnPresence = own?.show_presence !== false;
+    renderA5ChatContactOptions();
+  }
+
+  function renderA5ChatThreadState() {
+    $('#a5ChatEmptyPanel')?.classList.toggle('hidden', Boolean(a5ChatSelectedConversationId));
+    $('#a5ChatThreadPanel')?.classList.toggle('hidden', !a5ChatSelectedConversationId);
+    $('#a5ChatLayout')?.classList.toggle('is-mobile-thread-open', Boolean(a5ChatSelectedConversationId));
+    if (!a5ChatSelectedConversationId) {
+      $('#a5ChatThreadName').textContent = 'Cuộc trò chuyện';
+      $('#a5ChatThreadStatus').textContent = 'A5 · thương mến';
+    }
+  }
+
+  function renderA5ChatThreadHeader(conversation) {
+    if (!conversation) return;
+    const isGroup = conversation.kind === 'group';
+    const profile = conversation.counterpart || {};
+    const presence = !isGroup ? a5ChatPresenceFor(profile.id) : null;
+    const avatar = $('#a5ChatThreadAvatar');
+    if (avatar) {
+      avatar.classList.toggle('is-group', isGroup);
+      avatar.innerHTML = isGroup ? '<span>🌷</span>' : (profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="" loading="lazy"/>` : `<span>${shortInitial(displayName(profile))}</span>`);
+      avatar.classList.toggle('is-online', Boolean(presence?.online));
+    }
+    $('#a5ChatThreadName').textContent = conversation.displayTitle || 'Cuộc trò chuyện';
+    $('#a5ChatThreadStatus').textContent = isGroup ? `${conversation.memberCount || profiles.length} thành viên · Phòng chung 12A5` : (presence?.label || 'Thành viên A5');
+    $('#a5ChatThreadKind').textContent = isGroup ? 'A5' : '♡';
+  }
+
+  function renderA5ChatMessages(options = {}) {
+    const box = $('#a5ChatMessages');
+    if (!box) return;
+    const wasNearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 100;
+    if (!a5ChatMessages.length) {
+      box.innerHTML = `<div class="a5-chat-empty-messages"><span>💌</span><strong>Gửi lời nhắn đầu tiên nhé</strong><p>Đôi khi chỉ cần một câu hỏi thăm nhỏ thôi.</p></div>`;
+    } else {
+      box.innerHTML = a5ChatMessages.map(message => {
+        const mine = message.sender_id === currentUser?.id;
+        const sender = profiles.find(profile => profile.id === message.sender_id) || {};
+        const title = mine ? 'Cậu' : displayName(sender);
+        const body = escapeHTML(message.body || '').replace(/\r?\n/g, '<br>');
+        return `<article class="a5-chat-message${mine ? ' is-mine' : ''}" data-message-id="${escapeAttr(message.id)}"><div class="a5-chat-message-avatar">${mine ? '♡' : shortInitial(title)}</div><div class="a5-chat-message-body">${!mine && a5ChatCurrentConversation()?.kind === 'group' ? `<span class="a5-chat-message-sender">${escapeHTML(title)}</span>` : ''}<div class="a5-chat-bubble">${body}</div><time datetime="${escapeAttr(message.created_at || '')}">${escapeHTML(a5ChatSafeTime(message.created_at))}</time></div></article>`;
+      }).join('');
+    }
+    if (options.forceBottom || wasNearBottom) box.scrollTop = box.scrollHeight;
+  }
+
+  function a5ChatCurrentConversation() {
+    return a5ChatConversations.find(conversation => conversation.id === a5ChatSelectedConversationId) || null;
+  }
+
+  async function openA5ChatConversation(conversationId) {
+    const conversation = a5ChatConversations.find(row => row.id === conversationId);
+    if (!conversation) return;
+    a5ChatSelectedConversationId = conversationId;
+    a5ChatMessages = [];
+    a5ChatHasOlderMessages = false;
+    a5ChatLastMessageCursor = null;
+    renderA5ChatInbox();
+    renderA5ChatThreadState();
+    renderA5ChatThreadHeader(conversation);
+    $('#a5ChatMessages').innerHTML = '<div class="a5-chat-loading"><span>♡</span><p>Đang tìm lại tin nhắn...</p></div>';
+    const { data, error } = await supabase.from('a5_chat_messages')
+      .select('id,conversation_id,sender_id,body,created_at')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false }).order('id', { ascending: false })
+      .limit(A5_CHAT_PAGE_SIZE);
+    if (error) {
+      console.error('A5 chat messages failed:', error);
+      $('#a5ChatMessages').innerHTML = '<div class="a5-chat-list-empty"><span>🌧️</span><strong>Chưa tải được tin nhắn</strong><p>Kiểm tra quyền truy cập và thử lại nhé.</p><button class="outline-button" data-action="chat-retry-thread">Thử lại</button></div>';
+      return;
+    }
+    if (a5ChatSelectedConversationId !== conversationId) return;
+    a5ChatMessages = (data || []).reverse();
+    a5ChatHasOlderMessages = (data || []).length === A5_CHAT_PAGE_SIZE;
+    a5ChatLastMessageCursor = a5ChatMessages[0] || null;
+    $('#a5ChatOlderButton')?.classList.toggle('hidden', !a5ChatHasOlderMessages);
+    renderA5ChatMessages({ forceBottom: true });
+    await markA5ChatRead(conversationId);
+    await loadA5ChatInbox({ silent: true });
+    $('#a5ChatComposerInput')?.focus({ preventScroll: true });
+  }
+
+  async function loadOlderA5ChatMessages() {
+    const conversationId = a5ChatSelectedConversationId;
+    const first = a5ChatMessages[0];
+    if (!conversationId || !first || !a5ChatHasOlderMessages || a5ChatLoadingMessages) return;
+    a5ChatLoadingMessages = true;
+    const button = $('#a5ChatOlderButton');
+    if (button) { button.disabled = true; button.textContent = 'Đang tải...'; }
+    const box = $('#a5ChatMessages');
+    const oldHeight = box?.scrollHeight || 0;
+    try {
+      const { data, error } = await supabase.from('a5_chat_messages')
+        .select('id,conversation_id,sender_id,body,created_at')
+        .eq('conversation_id', conversationId).lt('created_at', first.created_at)
+        .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(A5_CHAT_PAGE_SIZE);
+      if (error) throw error;
+      if (a5ChatSelectedConversationId !== conversationId) return;
+      const oldIds = new Set(a5ChatMessages.map(message => message.id));
+      const older = (data || []).reverse().filter(message => !oldIds.has(message.id));
+      a5ChatMessages = [...older, ...a5ChatMessages];
+      a5ChatHasOlderMessages = (data || []).length === A5_CHAT_PAGE_SIZE;
+      renderA5ChatMessages();
+      if (box) box.scrollTop += box.scrollHeight - oldHeight;
+    } catch (error) {
+      console.warn('Could not load older A5 chat messages:', error);
+      toast('Chưa tải được tin cũ hơn. Thử lại nha.', 'error');
+    } finally {
+      a5ChatLoadingMessages = false;
+      if (button) { button.disabled = false; button.textContent = 'Tải tin nhắn cũ hơn'; button.classList.toggle('hidden', !a5ChatHasOlderMessages); }
+    }
+  }
+
+  async function markA5ChatRead(conversationId) {
+    if (!supabase || !currentUser || !conversationId) return;
+    try {
+      const { error } = await supabase.rpc('a5_chat_mark_read', { p_conversation_id: conversationId });
+      if (error) throw error;
+      const conversation = a5ChatConversations.find(row => row.id === conversationId);
+      if (conversation) { conversation.last_read_at = new Date().toISOString(); conversation.unread = false; renderA5ChatInbox(); }
+    } catch (error) {
+      console.warn('A5 chat read marker was not saved:', error?.message || error);
+    }
+  }
+
+  async function sendA5ChatMessage(event) {
+    event.preventDefault();
+    const conversationId = a5ChatSelectedConversationId;
+    const input = $('#a5ChatComposerInput');
+    const body = String(input?.value || '').trim();
+    if (!conversationId || !body || !currentUser || a5ChatSending) return;
+    if (body.length > 4000) return toast('Tin nhắn tối đa 4.000 ký tự nha.', 'error');
+    a5ChatSending = true;
+    const submit = $('#a5ChatSendButton');
+    if (submit) { submit.disabled = true; submit.textContent = 'Đang gửi...'; }
+    try {
+      const { data, error } = await supabase.from('a5_chat_messages')
+        .insert({ conversation_id: conversationId, sender_id: currentUser.id, body })
+        .select('id,conversation_id,sender_id,body,created_at').single();
+      if (error) throw error;
+      if (a5ChatSelectedConversationId === conversationId && !a5ChatMessages.some(message => message.id === data.id)) {
+        a5ChatMessages.push(data);
+        if (a5ChatMessages.length > A5_CHAT_PAGE_SIZE) a5ChatMessages = a5ChatMessages.slice(-A5_CHAT_PAGE_SIZE);
+        renderA5ChatMessages({ forceBottom: true });
+      }
+      if (input) input.value = '';
+      await loadA5ChatInbox({ silent: true });
+      await markA5ChatRead(conversationId);
+    } catch (error) {
+      console.error('A5 chat send failed:', error);
+      toast('Chưa gửi được tin nhắn. Kiểm tra kết nối rồi thử lại nha.', 'error', 5000);
+    } finally {
+      a5ChatSending = false;
+      if (submit) { submit.disabled = false; submit.textContent = 'Gửi ♡'; }
+      input?.focus({ preventScroll: true });
+    }
+  }
+
+  async function startA5DirectFromForm(event) {
+    event.preventDefault();
+    const select = $('#a5ChatContactSelect');
+    const otherId = select?.value;
+    if (!otherId || otherId === currentUser?.id) return toast('Chọn một người bạn A5 nha.', 'info');
+    const submit = $('#a5ChatStartDirectForm button[type="submit"]');
+    if (submit) { submit.disabled = true; submit.textContent = 'Đang mở...'; }
+    try {
+      const { data, error } = await supabase.rpc('a5_chat_get_or_create_direct', { p_other_user_id: otherId });
+      if (error) throw error;
+      const conversationId = typeof data === 'string' ? data : data?.a5_chat_get_or_create_direct;
+      if (!conversationId) throw new Error('RPC chưa trả về ID cuộc trò chuyện.');
+      $('#a5ChatNewDirectPanel')?.classList.add('hidden');
+      const newButton = $('[data-action="chat-toggle-new"]');
+      newButton?.setAttribute('aria-expanded', 'false');
+      await loadA5ChatInbox({ silent: true });
+      await openA5ChatConversation(conversationId);
+    } catch (error) {
+      console.error('A5 direct conversation could not be created:', error);
+      toast('Chưa mở được chat riêng. Kiểm tra migration Chat v1 và thử lại nha.', 'error', 5000);
+    } finally {
+      if (submit) { submit.disabled = false; submit.textContent = 'Mở cuộc trò chuyện ♡'; }
+    }
+  }
+
+  function toggleA5ChatNewDirect() {
+    const panel = $('#a5ChatNewDirectPanel');
+    const button = $('[data-action="chat-toggle-new"]');
+    if (!panel) return;
+    const opening = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', !opening);
+    button?.setAttribute('aria-expanded', String(opening));
+    if (opening) {
+      renderA5ChatContactOptions();
+      $('#a5ChatContactSelect')?.focus({ preventScroll: true });
+    }
+  }
+
+  async function toggleA5ChatPresence() {
+    if (!supabase || !currentUser || !a5ChatFeatureAvailable) return;
+    const next = !a5ChatShowOwnPresence;
+    const row = { user_id: currentUser.id, last_seen_at: new Date().toISOString(), is_online: document.visibilityState === 'visible', show_presence: next };
+    const button = $('#a5ChatPresenceToggle');
+    if (button) button.disabled = true;
+    try {
+      const { data, error } = await supabase.from('a5_chat_presence').upsert(row, { onConflict: 'user_id' }).select('user_id,last_seen_at,is_online,show_presence').single();
+      if (error) throw error;
+      a5ChatPresence.set(currentUser.id, data);
+      a5ChatShowOwnPresence = next;
+      renderA5ChatPresenceSetting();
+      renderA5ChatInbox();
+      toast(next ? 'Bạn bè có thể thấy lúc cậu hoạt động ♡' : 'Đã ẩn trạng thái hoạt động của cậu.', 'success');
+    } catch (error) {
+      console.error('A5 chat presence privacy setting failed:', error);
+      toast('Chưa đổi được quyền riêng tư trạng thái. Kiểm tra chính sách SQL nha.', 'error');
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  async function writeA5ChatPresence(isOnline = true) {
+    if (!supabase || !currentUser || !a5ChatFeatureAvailable) return;
+    try {
+      const existing = a5ChatPresence.get(currentUser.id);
+      const row = {
+        user_id: currentUser.id,
+        last_seen_at: new Date().toISOString(),
+        is_online: Boolean(isOnline),
+        show_presence: existing?.show_presence !== false
+      };
+      const { data, error } = await supabase.from('a5_chat_presence').upsert(row, { onConflict: 'user_id' }).select('user_id,last_seen_at,is_online,show_presence').single();
+      if (error) throw error;
+      a5ChatPresence.set(currentUser.id, data);
+      a5ChatShowOwnPresence = data.show_presence !== false;
+      renderA5ChatPresenceSetting();
+    } catch (error) {
+      console.warn('A5 chat presence heartbeat stopped:', error?.message || error);
+      if (a5ChatPresenceTimer) window.clearInterval(a5ChatPresenceTimer);
+      a5ChatPresenceTimer = null;
+    }
+  }
+
+  async function startA5ChatPresenceTracking() {
+    if (!supabase || !currentUser) return;
+    if (a5ChatPresenceTimer) return;
+    try {
+      const { data, error } = await supabase.from('a5_chat_presence').select('user_id,last_seen_at,is_online,show_presence').eq('user_id', currentUser.id).maybeSingle();
+      if (error) throw error;
+      if (data) { a5ChatPresence.set(currentUser.id, data); a5ChatShowOwnPresence = data.show_presence !== false; }
+      a5ChatFeatureAvailable = true;
+      await writeA5ChatPresence(document.visibilityState === 'visible');
+      a5ChatPresenceTimer = window.setInterval(() => {
+        if (document.visibilityState === 'visible' && currentUser) void writeA5ChatPresence(true);
+      }, 60000);
+      if (!a5ChatPresenceLifecycleBound) {
+        a5ChatPresenceLifecycleBound = true;
+        document.addEventListener('visibilitychange', () => {
+          if (!currentUser) return;
+          if (document.visibilityState === 'visible') void writeA5ChatPresence(true);
+          else void writeA5ChatPresence(false);
+        });
+        window.addEventListener('pagehide', () => { if (currentUser) void writeA5ChatPresence(false); });
+      }
+      setupA5ChatRealtime();
+    } catch (error) {
+      // A missing chat migration must not affect login, albums, upload or other realtime features.
+      a5ChatFeatureAvailable = false;
+      a5ChatFeatureError = 'Cần chạy supabase/a5-chat-phase1.sql một lần trong Supabase SQL Editor.';
+      console.info('A5 chat is not configured yet; other features remain available.');
+    }
+  }
+
+  function stopA5ChatServices() {
+    if (a5ChatPresenceTimer) window.clearInterval(a5ChatPresenceTimer);
+    a5ChatPresenceTimer = null;
+    if (a5ChatPresenceRenderTimer) window.clearTimeout(a5ChatPresenceRenderTimer);
+    a5ChatPresenceRenderTimer = null;
+    if (a5ChatRealtimeChannel && supabase) {
+      try { void supabase.removeChannel(a5ChatRealtimeChannel); } catch (error) { console.warn('A5 chat channel cleanup:', error?.message || error); }
+    }
+    a5ChatRealtimeChannel = null;
+    a5ChatRealtimeUserId = null;
+    a5ChatConversations = [];
+    a5ChatMessages = [];
+    a5ChatSelectedConversationId = null;
+    a5ChatPresence = new Map();
+    a5ChatFeatureAvailable = false;
+    a5ChatLoadingInbox = false;
+    a5ChatSending = false;
+  }
+
+  function queueA5ChatPresenceUiUpdate() {
+    if (a5ChatPresenceRenderTimer) window.clearTimeout(a5ChatPresenceRenderTimer);
+    a5ChatPresenceRenderTimer = window.setTimeout(() => {
+      a5ChatPresenceRenderTimer = null;
+      if (activeTab !== 'chat') return;
+      const onlineCount = [...a5ChatPresence.entries()].filter(([id]) => id !== currentUser?.id && a5ChatPresenceFor(id).online).length;
+      const summary = $('#a5ChatOnlineSummary');
+      if (summary) summary.textContent = onlineCount ? `${onlineCount} bạn đang hoạt động` : 'Một góc nhỏ để tìm nhau';
+      $$('[data-a5-chat-status-user]').forEach(element => {
+        const presence = a5ChatPresenceFor(element.dataset.a5ChatStatusUser);
+        element.textContent = presence.label;
+        element.classList.toggle('is-online', presence.online);
+      });
+      $$('[data-a5-chat-user-id]').forEach(element => {
+        element.classList.toggle('is-online', a5ChatPresenceFor(element.dataset.a5ChatUserId).online);
+      });
+      const conversation = a5ChatCurrentConversation();
+      if (conversation) renderA5ChatThreadHeader(conversation);
+    }, 650);
+  }
+
+  function setupA5ChatRealtime() {
+    if (!supabase || !currentUser || !a5ChatFeatureAvailable) return;
+    if (a5ChatRealtimeChannel && a5ChatRealtimeUserId === currentUser.id) return;
+    if (a5ChatRealtimeChannel) {
+      try { void supabase.removeChannel(a5ChatRealtimeChannel); } catch (_) { /* no-op */ }
+    }
+    a5ChatRealtimeUserId = currentUser.id;
+    const channel = supabase.channel(`a5-chat-live-${currentUser.id.slice(0, 8)}-${Date.now().toString(36)}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'a5_chat_messages' }, payload => {
+        const message = payload.new;
+        if (!message?.id || !message?.conversation_id) return;
+        const conversation = a5ChatConversations.find(row => row.id === message.conversation_id);
+        if (!conversation) { void loadA5ChatInbox({ silent: true }); return; }
+        conversation.last_message_at = message.created_at;
+        conversation.last_message_preview = message.body;
+        conversation.last_message_sender_id = message.sender_id;
+        if (a5ChatSelectedConversationId === message.conversation_id) {
+          const box = $('#a5ChatMessages');
+          const nearBottom = box ? box.scrollHeight - box.scrollTop - box.clientHeight < 140 : true;
+          if (!a5ChatMessages.some(row => row.id === message.id)) {
+            a5ChatMessages.push(message);
+            if (a5ChatMessages.length > A5_CHAT_PAGE_SIZE) a5ChatMessages = a5ChatMessages.slice(-A5_CHAT_PAGE_SIZE);
+            renderA5ChatMessages({ forceBottom: nearBottom });
+          }
+          if (document.visibilityState === 'visible' && activeTab === 'chat') void markA5ChatRead(message.conversation_id);
+        } else if (message.sender_id !== currentUser.id) {
+          conversation.unread = true;
+        }
+        renderA5ChatInbox();
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'a5_chat_members' }, () => { void loadA5ChatInbox({ silent: true }); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'a5_chat_presence' }, payload => {
+        const row = payload.new;
+        if (row?.user_id) a5ChatPresence.set(row.user_id, row);
+        else if (payload.old?.user_id) a5ChatPresence.delete(payload.old.user_id);
+        queueA5ChatPresenceUiUpdate();
+      });
+    a5ChatRealtimeChannel = channel;
+    channel.subscribe(status => {
+      if (a5ChatRealtimeChannel !== channel) return;
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        console.warn('A5 chat Realtime is unavailable; chat send/load still works.', status);
+      }
+    });
+  }
+
   // Live updates: update data and visible sections in-place; never reload the document.
   let a5RealtimeChannel = null;
   let a5RealtimeActivityChannel = null;
@@ -596,6 +1194,7 @@
     updateA5InstallButtons();
     setupA5LiveLifecycleEvents();
     ensureA5WishTreeMarkup();
+    ensureA5ChatMarkup();
     bindEvents();
     $('#a5WishForm')?.addEventListener('submit', submitA5Wish);
     $('#a5WishText')?.addEventListener('input', event => {
@@ -620,6 +1219,7 @@
         window.setTimeout(() => {
           if (event === 'SIGNED_OUT') {
             stopA5RealtimeSubscriptions();
+            stopA5ChatServices();
             stopA5WishRealtime(); a5WishLoadToken += 1; a5WishItems = []; a5WishCount = 0; a5WishPage = 0; a5WishBusy = false;
             currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; classroomSeats = []; classroomFeatureAvailable = false; classOfficerAssignments = []; officersFeatureAvailable = false; isA5SiteAdmin = false; seatPromptShownForUserId = null; lastUserId = null; profileArchiveStates.clear(); profileArchiveItemsById.clear(); publicProfileUserId = null;
             yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookOpened = false; yearbookSpreadIndex = 0;
@@ -670,10 +1270,12 @@
       renderProfile();
       setupA5RealtimeSubscriptions();
       setupA5WishRealtime();
+      void startA5ChatPresenceTracking();
       if (!a5WishItems.length && a5WishFeatureAvailable) void loadA5WishPage(0);
       return;
     }
     stopA5RealtimeSubscriptions();
+    stopA5ChatServices();
     lastUserId = session.user.id;
     await loadData(true);
     await syncLinkedProviders();
@@ -682,6 +1284,7 @@
     setupA5RealtimeSubscriptions();
     void loadA5WishPage(0);
     setupA5WishRealtime();
+    void startA5ChatPresenceTracking();
   }
 
   async function signOut() {
@@ -689,9 +1292,17 @@
     const button = $('#logoutButton');
     if (button) button.disabled = true;
     await clearA5PushOnSignOut();
+    if (a5ChatFeatureAvailable && currentUser) await writeA5ChatPresence(false);
     const { error } = await supabase.auth.signOut();
     if (button) button.disabled = false;
-    if (error) { console.error(error); toast('Chưa đăng xuất được. Thử lại nhé.', 'error'); return; }
+    if (error) {
+      console.error(error);
+      toast('Chưa đăng xuất được. Thử lại nhé.', 'error');
+      // Keep chat/presence working if the auth session is still active.
+      if (currentUser) void startA5ChatPresenceTracking();
+      return;
+    }
+    stopA5ChatServices();
     stopA5WishRealtime(); a5WishLoadToken += 1; a5WishItems = []; a5WishCount = 0; a5WishPage = 0; a5WishBusy = false;
     currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; classroomSeats = []; classroomFeatureAvailable = false; classOfficerAssignments = []; officersFeatureAvailable = false; isA5SiteAdmin = false; seatPromptShownForUserId = null; lastUserId = null; profileArchiveStates.clear(); profileArchiveItemsById.clear(); publicProfileUserId = null;
     yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookOpened = false; yearbookSpreadIndex = 0;
@@ -2623,7 +3234,7 @@
     if (activeTab === 'yearbook' && yearbookOpened && !Array.isArray(yearbookMediaCache) && !yearbookLoading) void loadYearbookData();
   }
   function switchTab(tab) {
-    if (!['home', 'gallery', 'yearbook', 'people', 'profile'].includes(tab)) return;
+    if (!['home', 'gallery', 'yearbook', 'people', 'profile', 'chat'].includes(tab)) return;
     if (activeTab === 'yearbook' && tab !== 'yearbook' && a5YearbookPendingLiveUpdate) {
       yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookRenderGeneration += 1;
       a5YearbookPendingLiveUpdate = false;
@@ -2634,11 +3245,15 @@
     if (tab === 'yearbook') { renderYearbook(); if (yearbookOpened) void loadYearbookData(); }
     if (tab === 'people') renderPeople();
     if (tab === 'profile') renderProfile();
+    if (tab === 'chat') {
+      if (a5ChatFeatureAvailable) { renderA5ChatInbox(); if (a5ChatSelectedConversationId) renderA5ChatThreadState(); }
+      void loadA5ChatInbox({ silent: a5ChatFeatureAvailable });
+    }
     const reduceMotion = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
     window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
   }
   function updateActiveTab() {
-    const names = { home: 'Trang chủ', gallery: 'Album kỷ niệm', yearbook: 'Cuốn kỷ yếu', people: 'Thành viên A5', profile: 'Góc của tớ' };
+    const names = { home: 'Trang chủ', gallery: 'Album kỷ niệm', yearbook: 'Cuốn kỷ yếu', people: 'Thành viên A5', profile: 'Góc của tớ', chat: 'Trò chuyện' };
     $$('.page-view').forEach(page => page.classList.toggle('active', page.id === `page-${activeTab}`));
     $$('[data-tab]').forEach(item => item.classList.toggle('active', item.dataset.tab === activeTab));
     $('#breadcrumbCurrent').textContent = names[activeTab] || names.home;
@@ -3792,6 +4407,10 @@
     $('#trimEndRange')?.addEventListener('input', event => updateTrimRange('end', Number(event.target.value)));
     $('#applyTrimButton')?.addEventListener('click', applyVideoTrim);
     $('#profileForm')?.addEventListener('submit', saveProfile);
+    $('#a5ChatStartDirectForm')?.addEventListener('submit', startA5DirectFromForm);
+    $('#a5ChatComposerForm')?.addEventListener('submit', sendA5ChatMessage);
+    $('#a5ChatSearch')?.addEventListener('input', renderA5ChatInbox);
+    $('#a5ChatComposerInput')?.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); $('#a5ChatComposerForm')?.requestSubmit(); } });
     $('#commentForm')?.addEventListener('submit', submitComment);
     $('#cancelCommentEdit')?.addEventListener('click', () => { editingCommentId = null; $('#editingCommentId').value = ''; $('#commentInput').value = ''; $('#commentSubmitButton').textContent = 'Gửi bình luận ♡'; $('#cancelCommentEdit').classList.add('hidden'); });
     $('#homeMonthFilter')?.addEventListener('change', event => { homeMonthFilter = event.target.value || 'all'; renderHomeMedia(); });
@@ -3847,7 +4466,13 @@
       const actionButton = event.target.closest('[data-action]');
       if (!actionButton) return;
       const action = actionButton.dataset.action;
-      if (action === 'install-app') await installA5App();
+      if (action === 'chat-toggle-new') toggleA5ChatNewDirect();
+      else if (action === 'chat-open-conversation') await openA5ChatConversation(actionButton.dataset.conversationId);
+      else if (action === 'chat-back-to-list') { $('#a5ChatLayout')?.classList.remove('is-mobile-thread-open'); }
+      else if (action === 'chat-load-older') await loadOlderA5ChatMessages();
+      else if (action === 'chat-toggle-presence') await toggleA5ChatPresence();
+      else if (action === 'chat-retry-thread') { const id = a5ChatSelectedConversationId; if (id) await openA5ChatConversation(id); }
+      else if (action === 'install-app') await installA5App();
       else if (action === 'enable-push-notifications') await enableA5PushNotifications();
       else if (action === 'disable-push-notifications') await disableA5PushNotifications(false);
       else if (action === 'test-push-notification') await testA5PushNotification();
