@@ -1,0 +1,39 @@
+/* A5 Auth UI Guard v1.0
+   Ensure app-only controls never appear over the login/auth screen. */
+
+/* Auth-only includes the short bootstrap interval before either app view is ready. */
+html.a5-auth-only #appShell,
+html.a5-auth-only .mobile-nav,
+html.a5-auth-only .sidebar,
+html.a5-auth-only .topbar,
+html.a5-auth-only .app-footer,
+html.a5-auth-only #a5UiExtrasProgress,
+html.a5-auth-only #a5UiExtrasTopButton,
+html.a5-auth-only #a5LoadingExperience {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* If a transient class race ever leaves both screens unhidden, login wins. */
+html.a5-auth-only #authScreen:not(.hidden) {
+  display: grid;
+  position: relative;
+  z-index: 2;
+}
+
+/* Keep login page controls fully interactive, without app navigation overlays. */
+html.a5-auth-only #authScreen:not(.hidden) button,
+html.a5-auth-only #authScreen:not(.hidden) a,
+html.a5-auth-only #authScreen:not(.hidden) input {
+  pointer-events: auto;
+}
+
+@media (max-width: 760px) {
+  html.a5-auth-only body {
+    overflow-x: hidden;
+  }
+  html.a5-auth-only #authScreen:not(.hidden) {
+    min-height: 100svh;
+  }
+}
