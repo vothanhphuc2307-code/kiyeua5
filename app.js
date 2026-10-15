@@ -1199,6 +1199,7 @@
     $('#a5MusicWidget')?.classList.add('hidden');
     $('#appShell').classList.add('hidden');
     $('#authScreen').classList.remove('hidden');
+    window.A5MemoryJourney?.setItems?.([], '');
     if (!isConfigured() || !window.supabase?.createClient) {
       $('#setupNotice').classList.remove('hidden');
       $('#authHint').textContent = !isConfigured()
@@ -1216,6 +1217,20 @@
     renderMusicTrackList();
   }
 
+  const bindHomeRailControlState = () => {
+    const rail = $('#homeMediaGrid');
+    if (!rail || rail.dataset.a5RailScrollBound === 'true') return;
+    rail.dataset.a5RailScrollBound = 'true';
+    rail.addEventListener('scroll', () => {
+      if (rail._a5HomeRailControlFrame) return;
+      rail._a5HomeRailControlFrame = window.requestAnimationFrame(() => {
+        rail._a5HomeRailControlFrame = 0;
+        updateHomeRailControls();
+      });
+    }, { passive: true });
+    window.addEventListener('resize', updateHomeRailControls, { passive: true });
+  };
+
   async function initialize() {
     window.setTimeout(() => $('#splash')?.classList.add('done'), 700);
     registerA5ServiceWorker();
@@ -1223,6 +1238,7 @@
     setupA5LiveLifecycleEvents();
     ensureA5WishTreeMarkup();
     ensureA5ChatMarkup();
+    bindHomeRailControlState();
     bindEvents();
     $('#a5WishForm')?.addEventListener('submit', submitA5Wish);
     $('#a5WishText')?.addEventListener('input', event => {
@@ -1420,6 +1436,7 @@
     const token = ++pageLoadToken;
     yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookRenderGeneration += 1;
     if (showLoading) {
+      $('#homeMemoryRailWrap')?.classList.remove('hidden');
       $('#homeMediaGrid').innerHTML = loadingCard('Đang tìm lại những kỷ niệm...');
       $('#galleryMediaGrid').innerHTML = loadingCard('Đang xếp album...');
       $('#peopleGrid').innerHTML = loadingCard('Đang gọi tên những người bạn...');
@@ -1481,6 +1498,7 @@
     } catch (error) {
       console.error('loadData failed:', error);
       const message = error?.message || 'Không rõ nguyên nhân';
+      $('#homeMemoryRailWrap')?.classList.remove('hidden');
       $('#homeMediaGrid').innerHTML = errorCard('Không tải được album', 'Kiểm tra schema SQL, quyền truy cập và kết nối Supabase.');
       $('#galleryMediaGrid').innerHTML = errorCard('Album chưa sẵn sàng', 'Hãy kiểm tra thiết lập backend theo README.');
       $('#peopleGrid').innerHTML = errorCard('Chưa tải được thành viên', 'Hãy kiểm tra thiết lập backend theo README.');
@@ -1727,6 +1745,10 @@
       }
 
       const mediaOrProfileChanged = snapshot.mediaChanged || snapshot.profilesChanged;
+      if (mediaOrProfileChanged) {
+        syncA5MemoryJourneyData();
+        if (activeTab === 'journey') window.A5MemoryJourney?.render?.();
+      }
       if (snapshot.mediaChanged) {
         populateMonthFilters();
         renderOnThisDay();
@@ -2173,21 +2195,96 @@
     container.dataset.a5GridHasRendered = 'true';
   }
 
+  // Home-only compact memory strip. It reuses the existing full-screen viewer and
+  // keeps keyed DOM nodes stable so realtime updates do not restart every card.
+  function renderHomeMemoryRailCard(item, index = 0) {
+    const owner = profiles.find(profile => profile.id === item.user_id) || item.profiles || {};
+    const isVideo = item.media_type === 'video';
+    const title = item.caption?.trim() || (isVideo ? 'Một đoạn phim của A5' : 'Một mảnh thanh xuân');
+    const date = formatDate(item.created_at, true);
+    const iso = new Date(item.created_at);
+    const isoValue = Number.isNaN(iso.getTime()) ? '' : iso.toISOString();
+    const mediaVisual = item.url
+      ? (isVideo
+        ? `<div class="a5-home-memory-video-art" aria-hidden="true"><span class="a5-home-video-orbit orbit-one"></span><span class="a5-home-video-orbit orbit-two"></span><span class="a5-home-video-play">▶</span><small>VIDEO KỶ NIỆM</small></div>`
+        : `<img src="${escapeAttr(item.url)}" alt="${escapeAttr(title)}" loading="lazy" decoding="async" fetchpriority="low"/>`)
+      : `<div class="a5-home-memory-fallback" aria-hidden="true">${isVideo ? '▷' : '✿'}<small>Đang chuẩn bị kỷ niệm…</small></div>`;
+    const signature = JSON.stringify([item.id, item.url || '', item.media_type, item.caption || '', item.album_name || '', item.created_at, item.user_id, displayName(owner), owner.avatar_url || '']);
+    const template = document.createElement('template');
+    template.innerHTML = `<article class="a5-home-memory-card" role="listitem" data-media-card="${escapeAttr(item.id)}" data-home-memory-id="${escapeAttr(item.id)}" data-home-memory-signature="${escapeAttr(signature)}" style="--a5-home-rail-index:${Math.min(index, 8)}">
+      <button type="button" class="a5-home-memory-trigger" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở đầy đủ ${isVideo ? 'video' : 'ảnh'}: ${escapeAttr(title)}" ${item.url ? '' : 'disabled'}>
+        <span class="a5-home-memory-cover ${isVideo ? 'is-video' : 'is-photo'}">${mediaVisual}<span class="a5-home-memory-kind">${isVideo ? '▶ VIDEO' : '▧ ẢNH'}</span><span class="a5-home-memory-expand" aria-hidden="true">⤢</span></span>
+        <span class="a5-home-memory-copy"><span class="a5-home-memory-album">${escapeHTML(item.album_name || 'NHẬT KÝ A5')}</span><strong>${escapeHTML(title)}</strong><span class="a5-home-memory-meta"><span class="a5-home-memory-owner">${escapeHTML(displayName(owner))}</span><time datetime="${escapeAttr(isoValue)}">${escapeHTML(date)}</time></span><span class="a5-home-memory-open-hint">Chạm để xem trọn khoảnh khắc <i aria-hidden="true">↗</i></span></span>
+      </button>
+    </article>`;
+    return template.content.firstElementChild;
+  }
+
+  function renderHomeMemoryRail(container, items) {
+    if (!container) return;
+    const wasRendered = container.dataset.a5HomeRailRendered === 'true';
+    const oldNodes = [...container.querySelectorAll(':scope > .a5-home-memory-card[data-home-memory-id]')];
+    const oldById = new Map(oldNodes.map(node => [String(node.dataset.homeMemoryId), node]));
+    const nextNodes = (items || []).map((item, index) => {
+      const id = String(item.id);
+      const signature = JSON.stringify([item.id, item.url || '', item.media_type, item.caption || '', item.album_name || '', item.created_at, item.user_id, displayName(profiles.find(profile => profile.id === item.user_id) || item.profiles || {}), (profiles.find(profile => profile.id === item.user_id) || item.profiles || {}).avatar_url || '']);
+      let node = oldById.get(id);
+      if (node) {
+        oldById.delete(id);
+        if (node.dataset.homeMemorySignature !== signature) {
+          node = renderHomeMemoryRailCard(item, index);
+          node.classList.add('a5-home-memory-card-updated');
+        } else {
+          node.style.setProperty('--a5-home-rail-index', String(Math.min(index, 8)));
+        }
+      } else {
+        node = renderHomeMemoryRailCard(item, index);
+        if (wasRendered) node.classList.add('a5-home-memory-card-new');
+      }
+      return node;
+    });
+    nextNodes.forEach((node, index) => {
+      const current = container.children[index] || null;
+      if (current !== node) container.insertBefore(node, current);
+    });
+    const keep = new Set(nextNodes);
+    [...container.children].forEach(node => { if (!keep.has(node)) node.remove(); });
+    container.dataset.a5HomeRailRendered = 'true';
+    container.classList.toggle('is-empty', nextNodes.length === 0);
+    updateHomeRailControls();
+  }
+
+  function updateHomeRailControls() {
+    const rail = $('#homeMediaGrid');
+    const controls = $$('.a5-home-rail-controls button');
+    if (!rail || !controls.length) return;
+    const maxScroll = Math.max(0, rail.scrollWidth - rail.clientWidth);
+    controls.forEach(button => {
+      const direction = Number(button.dataset.direction || 0);
+      button.disabled = maxScroll < 4 || (direction < 0 ? rail.scrollLeft <= 2 : rail.scrollLeft >= maxScroll - 2);
+    });
+  }
+
   function renderHomeMedia() {
     let items = mediaItems.filter(searchable);
     if (homeFilter !== 'all') items = items.filter(item => item.media_type === homeFilter);
     if (homeMonthFilter !== 'all') items = items.filter(item => monthKey(item.created_at) === homeMonthFilter);
     if (homeAlbumFilter !== 'all') items = items.filter(item => item.album_name === homeAlbumFilter);
+    items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     const matchedCount = items.length;
-    items = items.slice(0, 6);
-    renderMediaGridInPlace($('#homeMediaGrid'), items);
-    $('#homeEmpty').classList.toggle('hidden', items.length !== 0);
-    $('#homeMediaGrid').classList.toggle('hidden', items.length === 0);
-    $('#homeMediaCount').textContent = `${matchedCount} kỷ niệm khớp bộ lọc`;
-    const filteredEmpty = mediaItems.length > 0 && (Boolean(searchTerm) || homeFilter !== 'all' || homeMonthFilter !== 'all');
+    const visibleItems = items.slice(0, 14);
+    renderHomeMemoryRail($('#homeMediaGrid'), visibleItems);
+    $('#homeMemoryRailWrap')?.classList.toggle('hidden', visibleItems.length === 0);
+    $('#homeEmpty').classList.toggle('hidden', visibleItems.length !== 0);
+    $('#homeMediaGrid').classList.toggle('hidden', visibleItems.length === 0);
+    $('#homeMediaCount').textContent = matchedCount > visibleItems.length
+      ? `Đang xem ${visibleItems.length}/${matchedCount} kỷ niệm`
+      : `${matchedCount} kỷ niệm khớp bộ lọc`;
+    const filteredEmpty = mediaItems.length > 0 && (Boolean(searchTerm) || homeFilter !== 'all' || homeMonthFilter !== 'all' || homeAlbumFilter !== 'all');
     $('#homeEmpty h3').textContent = filteredEmpty ? 'Chưa có kỷ niệm khớp bộ lọc' : 'Trang lưu bút vẫn đang chờ!';
     $('#homeEmpty p').textContent = filteredEmpty ? 'Thử chọn tháng khác, bỏ bộ lọc hoặc tìm bằng từ khóa khác nhé.' : 'Hãy là người đầu tiên góp một khoảnh khắc vào album A5 nhé.';
     $$('[data-home-filter]').forEach(button => button.classList.toggle('active', button.dataset.homeFilter === homeFilter));
+    updateHomeRailControls();
   }
   function renderGallery() {
     let items = mediaItems.filter(searchable);
@@ -3258,6 +3355,24 @@
     }, 170);
   }
 
+  function syncA5MemoryJourneyData() {
+    if (!window.A5MemoryJourney || typeof window.A5MemoryJourney.setItems !== 'function') return;
+    const snapshot = mediaItems.map(item => {
+      const owner = profiles.find(profile => profile.id === item.user_id) || item.profiles || {};
+      return {
+        id: String(item.id || ''),
+        user_id: String(item.user_id || ''),
+        media_type: item.media_type === 'video' ? 'video' : 'photo',
+        created_at: item.created_at || '',
+        album_name: String(item.album_name || ''),
+        caption: String(item.caption || ''),
+        owner_name: displayName(owner),
+        preview_url: item.media_type === 'video' ? '' : String(item.url || '')
+      };
+    }).filter(item => item.id && item.created_at);
+    window.A5MemoryJourney.setItems(snapshot, currentUser?.id || '');
+  }
+
   function renderAll() {
     populateMonthFilters();
     // The home view is the first screen. Avoid building up to 200 gallery cards and
@@ -3267,6 +3382,7 @@
     if (activeTab === 'gallery') renderGallery();
     if (activeTab === 'people') renderPeople();
     renderOnThisDay();
+    syncA5MemoryJourneyData();
     renderNotificationBadge();
     renderYearbook();
     renderA5WishTree();
@@ -3274,7 +3390,7 @@
     if (activeTab === 'yearbook' && yearbookOpened && !Array.isArray(yearbookMediaCache) && !yearbookLoading) void loadYearbookData();
   }
   function switchTab(tab) {
-    if (!['home', 'gallery', 'yearbook', 'people', 'profile', 'chat'].includes(tab)) return;
+    if (!['home', 'gallery', 'yearbook', 'people', 'profile', 'chat', 'journey'].includes(tab)) return;
     if (activeTab === 'yearbook' && tab !== 'yearbook' && a5YearbookPendingLiveUpdate) {
       yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookRenderGeneration += 1;
       a5YearbookPendingLiveUpdate = false;
@@ -3285,6 +3401,7 @@
     if (tab === 'yearbook') { renderYearbook(); if (yearbookOpened) void loadYearbookData(); }
     if (tab === 'people') renderPeople();
     if (tab === 'profile') renderProfile();
+    if (tab === 'journey') window.A5MemoryJourney?.render?.();
     if (tab === 'chat') {
       if (a5ChatFeatureAvailable) { renderA5ChatInbox(); if (a5ChatSelectedConversationId) renderA5ChatThreadState(); }
       void loadA5ChatInbox({ silent: a5ChatFeatureAvailable });
@@ -3293,7 +3410,7 @@
     window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
   }
   function updateActiveTab() {
-    const names = { home: 'Trang chủ', gallery: 'Album kỷ niệm', yearbook: 'Cuốn kỷ yếu', people: 'Thành viên A5', profile: 'Góc của tớ', chat: 'Trò chuyện' };
+    const names = { home: 'Trang chủ', gallery: 'Album kỷ niệm', yearbook: 'Cuốn kỷ yếu', people: 'Thành viên A5', profile: 'Góc của tớ', chat: 'Trò chuyện', journey: 'Hành trình thanh xuân' };
     $$('.page-view').forEach(page => page.classList.toggle('active', page.id === `page-${activeTab}`));
     $$('[data-tab]').forEach(item => item.classList.toggle('active', item.dataset.tab === activeTab));
     $('#breadcrumbCurrent').textContent = names[activeTab] || names.home;
@@ -4509,7 +4626,16 @@
       const actionButton = event.target.closest('[data-action]');
       if (!actionButton) return;
       const action = actionButton.dataset.action;
-      if (action === 'chat-toggle-new') toggleA5ChatNewDirect();
+      if (action === 'home-rail-scroll') {
+        const rail = $('#homeMediaGrid');
+        const direction = Number(actionButton.dataset.direction || 1);
+        if (rail) {
+          const reduced = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
+          rail.scrollBy({ left: direction * Math.max(rail.clientWidth * 0.82, 240), behavior: reduced ? 'auto' : 'smooth' });
+          window.setTimeout(updateHomeRailControls, reduced ? 0 : 280);
+        }
+      }
+      else if (action === 'chat-toggle-new') toggleA5ChatNewDirect();
       else if (action === 'chat-open-conversation') await openA5ChatConversation(actionButton.dataset.conversationId);
       else if (action === 'chat-back-to-list') { $('#a5ChatLayout')?.classList.remove('is-mobile-thread-open'); }
       else if (action === 'chat-load-older') await loadOlderA5ChatMessages();

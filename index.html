@@ -24,6 +24,9 @@
   <link rel="stylesheet" href="a5-loading-experience.css" />
   <link rel="stylesheet" href="a5-auth-ui-guard.css" />
   <link rel="stylesheet" href="a5-visual-polish.css" />
+  <link rel="stylesheet" href="a5-performance-lab.css" />
+  <link rel="stylesheet" href="a5-memory-journey.css" />
+  <link rel="stylesheet" href="a5-home-memory-rail.css" />
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
   <script src="push-config.js"></script>
@@ -33,6 +36,8 @@
   <script defer src="a5-loading-experience.js"></script>
   <script defer src="a5-auth-ui-guard.js"></script>
   <script defer src="a5-visual-polish.js"></script>
+  <script defer src="a5-performance-lab.js"></script>
+  <script defer src="a5-memory-journey.js"></script>
 </head>
 <body>
   <div id="splash" class="splash" aria-label="Đang mở cuốn lưu bút">
@@ -104,9 +109,18 @@
             <div class="on-this-day-heading"><div><span class="section-overline">A LITTLE TIME CAPSULE</span><h2 id="onThisDayTitle">Ngày này năm ấy 🥹</h2><p id="onThisDayMessage">Những khoảnh khắc được lưu vào cùng ngày trong các năm trước.</p></div><span class="on-this-day-stamp">↺ A5</span></div>
             <div id="onThisDayGrid" class="on-this-day-grid"><div class="on-this-day-empty">💌 Khi cuốn lưu bút dày thêm, kỷ niệm cũ sẽ trở về nơi này.</div></div>
           </section>
-          <div class="section-heading"><div><span class="section-overline">LƯU BÚT MỖI NGÀY</span><h2>Những điều mình muốn nhớ <span>♡</span></h2><p>Có những điều nhỏ xíu, nhưng sau này sẽ thành cả bầu trời kỷ niệm.</p></div><button class="subtle-button" data-tab="gallery">Xem tất cả <span>↗</span></button></div>
+          <div class="section-heading a5-home-memory-heading"><div><span class="section-overline">A5 MEMORY STRIP · LƯU BÚT MỖI NGÀY</span><h2>Những điều mình muốn nhớ <span>♡</span></h2><p>Một dải ký ức để lướt qua — chạm vào ảnh hoặc video để mở trọn khoảnh khắc.</p></div><button class="subtle-button" data-tab="gallery">Xem tất cả <span>↗</span></button></div>
           <div class="memory-filter-row"><div class="filter-pills"><button class="filter-pill active" data-home-filter="all">Tất cả</button><button class="filter-pill" data-home-filter="photo">📸 Ảnh chụp</button><button class="filter-pill" data-home-filter="video">🎞️ Video</button></div><div class="memory-filter-right"><label class="month-filter-label" for="homeMonthFilter">🗓️ <span>Thời gian</span></label><select id="homeMonthFilter" class="sort-select month-filter-select" aria-label="Lọc kỷ niệm theo tháng"><option value="all">Tất cả các tháng</option></select><select id="homeAlbumFilter" class="sort-select album-filter-select" aria-label="Lọc theo album sự kiện"><option value="all">Tất cả sự kiện</option></select><span class="small-muted" id="homeMediaCount">mới nhất từ lớp mình</span></div></div><div class="month-memory-note" id="homeMonthNote">🌷 Mỗi tháng là một mảnh ghép của thanh xuân.</div>
-          <div class="media-grid" id="homeMediaGrid"><div class="loading-card"><span class="loading-flower">✿</span><p>Đang tìm lại những kỷ niệm...</p></div></div>
+          <div class="a5-home-rail-wrap" id="homeMemoryRailWrap">
+            <div class="a5-home-rail-toolbar">
+              <p><span class="a5-home-rail-live-dot" aria-hidden="true"></span><span>Vuốt ngang để xem thêm · chạm để mở ảnh/video toàn màn hình</span></p>
+              <div class="a5-home-rail-controls" aria-label="Điều khiển dải kỷ niệm">
+                <button type="button" data-action="home-rail-scroll" data-direction="-1" aria-label="Cuộn kỷ niệm về trước" title="Cuộn về trước">←</button>
+                <button type="button" data-action="home-rail-scroll" data-direction="1" aria-label="Cuộn kỷ niệm tiếp theo" title="Cuộn tiếp">→</button>
+              </div>
+            </div>
+            <div class="a5-home-memory-rail" id="homeMediaGrid" role="list" aria-label="Dải ảnh và video kỷ niệm A5"><div class="loading-card"><span class="loading-flower">✿</span><p>Đang tìm lại những kỷ niệm...</p></div></div>
+          </div>
           <div class="empty-state hidden" id="homeEmpty"><div class="empty-illustration">📸<span>✦</span></div><h3>Trang lưu bút vẫn đang chờ!</h3><p>Hãy là người đầu tiên góp một khoảnh khắc vào album A5 nhé.</p><button class="primary-button" data-action="upload-photo">Đăng ảnh đầu tiên ↗</button></div>
           <div class="closing-note"><span>✦</span><p>“Một ngày nào đó, chúng ta sẽ nhớ những ngày hôm nay.”</p><span>✦</span></div>
         </section>
