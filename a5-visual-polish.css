@@ -1,0 +1,123 @@
+/* A5 Visual Polish v1.0
+   Cohesion layer for the existing A5 Motion UI. It deliberately adds no second
+   animation engine and does not target the login screen. */
+:root {
+  /* One motion vocabulary shared by the existing motion module. */
+  --a5-motion-spring: cubic-bezier(.18, .88, .24, 1) !important;
+  --a5-motion-smooth: cubic-bezier(.22, .72, .18, 1) !important;
+  --a5-motion-fast: 155ms !important;
+  --a5-motion-page-time: 390ms !important;
+  --a5-vp-rose: #cf7895;
+  --a5-vp-rose-deep: #b95f7d;
+  --a5-vp-ink: #5b4657;
+  --a5-vp-line: rgba(222, 190, 204, .65);
+  --a5-vp-shadow-soft: 0 8px 24px rgba(111, 72, 98, .07);
+  --a5-vp-shadow-hover: 0 14px 32px rgba(111, 72, 98, .115);
+}
+
+/* The JS toggles this class only while the authenticated app shell is visible. */
+html.a5-visual-app-ready :where(button, a, [role="button"], input, textarea, select) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* A consistent, quiet focus language without altering normal mouse clicks. */
+html.a5-visual-app-ready :where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid rgba(207, 120, 149, .8);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px rgba(207, 120, 149, .10);
+}
+
+/* Normalize hover/press transitions by animating only decorative properties.
+   The existing app.js remains in charge of scale, translate, ripple and gestures. */
+html.a5-visual-app-ready :where(
+  .primary-button, .outline-button, .subtle-button, .text-button,
+  .nav-item, .mobile-nav-item, .filter-pill, .sort-select,
+  .notification-top-button, .top-icon-button, .top-avatar,
+  .yearbook-page-button, .a5-chat-send-button, .a5-chat-new-button
+) {
+  transition-timing-function: var(--a5-motion-smooth);
+}
+
+html.a5-visual-app-ready :where(.primary-button, .outline-button, .subtle-button, .filter-pill, .sort-select) {
+  transition-property: background-color, border-color, color, box-shadow;
+  transition-duration: 180ms;
+}
+
+/* Make surfaces feel related across gallery, people, archives, and memories.
+   No transforms are applied here, so Polaroid angles and page-turn transforms stay intact. */
+html.a5-visual-app-ready :where(.media-card, .memory-card, .person-card, .on-this-day-item, .profile-archive-tile) {
+  border-color: var(--a5-vp-line);
+  transition-property: border-color, box-shadow;
+  transition-duration: 220ms;
+  transition-timing-function: var(--a5-motion-smooth);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  html.a5-visual-app-ready :where(.media-card, .memory-card, .person-card, .on-this-day-item, .profile-archive-tile):hover {
+    border-color: rgba(207, 120, 149, .38);
+    box-shadow: var(--a5-vp-shadow-hover);
+  }
+  html.a5-visual-app-ready :where(.primary-button, .outline-button, .filter-pill, .nav-item):hover {
+    border-color: rgba(207, 120, 149, .42);
+  }
+}
+
+/* Give the desktop sidebar and top toolbar a shared, understated surface language. */
+@media (min-width: 761px) {
+  html.a5-visual-app-ready .sidebar {
+    border-right-color: rgba(231, 214, 224, .88);
+  }
+  html.a5-visual-app-ready .topbar {
+    border-bottom-color: rgba(231, 214, 224, .82);
+  }
+  html.a5-visual-app-ready .nav-item.active {
+    box-shadow: inset 3px 0 var(--a5-vp-rose), 0 3px 12px rgba(180, 95, 125, .045);
+  }
+}
+
+/* Tiny active-state flourish, only when a user switches to another mobile tab. */
+@keyframes a5-vp-mobile-icon-arrive {
+  0% { scale: .92; }
+  62% { scale: 1.075; }
+  100% { scale: 1; }
+}
+@media (max-width: 760px) and (pointer: coarse) {
+  html.a5-visual-app-ready .mobile-nav {
+    --a5-mobile-glass: rgba(255, 250, 253, .88);
+    box-shadow: 0 12px 34px rgba(89, 57, 79, .13), inset 0 1px 0 rgba(255, 255, 255, .98);
+  }
+  html.a5-visual-app-ready .mobile-nav::after {
+    content: "";
+    position: absolute;
+    pointer-events: none;
+    top: 1px;
+    left: 22%;
+    right: 22%;
+    height: 1px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.98), transparent);
+  }
+  html.a5-visual-app-ready .mobile-nav-item.active > span {
+    animation: a5-vp-mobile-icon-arrive 300ms var(--a5-motion-spring) both;
+  }
+  html.a5-visual-app-ready .mobile-nav-item.active::before {
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.96), 0 4px 12px rgba(155, 100, 134, .09);
+  }
+  html.a5-visual-app-ready .mobile-add {
+    box-shadow: 0 8px 18px rgba(189, 98, 137, .24), inset 0 1px 0 rgba(255,255,255,.55);
+  }
+  /* Keep the active icon flourish cheap on constrained devices. */
+  html.a5-perf-lite.a5-visual-app-ready .mobile-nav-item.active > span {
+    animation-duration: 180ms;
+  }
+}
+
+/* Keep reduced-motion users safe even if earlier modules also set animation. */
+@media (prefers-reduced-motion: reduce) {
+  html.a5-visual-app-ready .mobile-nav-item.active > span {
+    animation: none !important;
+  }
+  html.a5-visual-app-ready :where(.media-card, .memory-card, .person-card, .on-this-day-item, .profile-archive-tile) {
+    transition: none !important;
+  }
+}
