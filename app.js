@@ -86,6 +86,8 @@
   let homeMemoryDeckGestureFrame = 0;
   let homeMemoryDeckPendingX = 0;
   let homeMemoryDeckSuppressClickUntil = 0;
+  let homeMemoryDeckBusy = false;
+  let homeMemoryDeckTransitionTimer = 0;
   let galleryFilter = 'all';
   let searchTerm = '';
   let currentUploadType = 'photo';
@@ -2265,18 +2267,35 @@
     });
   }
 
-  function stepHomeMemoryDeck(direction) {
-    if (homeMemoryDeckCount < 2) return;
+  function stepHomeMemoryDeck(direction, options = {}) {
+    if (homeMemoryDeckCount < 2 || (homeMemoryDeckBusy && !options.force)) return;
     const nextIndex = Math.max(0, Math.min(homeMemoryDeckCount - 1, homeMemoryDeckIndex + Math.sign(direction || 1)));
     if (nextIndex === homeMemoryDeckIndex) return;
+    homeMemoryDeckBusy = true;
+    if (homeMemoryDeckTransitionTimer) {
+      window.clearTimeout(homeMemoryDeckTransitionTimer);
+      homeMemoryDeckTransitionTimer = 0;
+    }
     homeMemoryDeckIndex = nextIndex;
     renderHomeMemoryRail($('#homeMediaGrid'), homeMemoryDeckItems);
+    // Coalesce rapid taps/swipes so several card transitions cannot pile up.
+    homeMemoryDeckTransitionTimer = window.setTimeout(() => {
+      homeMemoryDeckTransitionTimer = 0;
+      homeMemoryDeckBusy = false;
+    }, 285);
   }
 
   function bindHomeRailControlState() {
     const rail = $('#homeMediaGrid');
     if (!rail || rail.dataset.a5RailScrollBound === 'true') return;
     rail.dataset.a5RailScrollBound = 'true';
+
+    // Avoid excessive shadow/animation paint on low-memory, low-core, or data-saving devices.
+    const memory = Number(navigator.deviceMemory || 0);
+    const cores = Number(navigator.hardwareConcurrency || 0);
+    if ((memory > 0 && memory <= 4) || (cores > 0 && cores <= 4) || navigator.connection?.saveData) {
+      $('#homeMemoryRailWrap')?.classList.add('a5-home-memory-lite');
+    }
 
     // A tap opens the photo/video; a horizontal swipe advances the deck instead.
     rail.addEventListener('click', event => {
@@ -2287,7 +2306,7 @@
     }, true);
 
     rail.addEventListener('pointerdown', event => {
-      if (event.pointerType === 'mouse' || (event.button !== undefined && event.button !== 0)) return;
+      if (homeMemoryDeckBusy || event.pointerType === 'mouse' || (event.button !== undefined && event.button !== 0)) return;
       if (!event.target.closest('.a5-home-memory-card')) return;
       homeMemoryDeckGesture = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, dx: 0, dy: 0, moved: false };
     }, { passive: true });
@@ -2311,6 +2330,13 @@
       });
     }, { passive: true });
 
+    const resetDeckGesture = () => {
+      const front = rail.querySelector('.a5-home-memory-card[data-home-deck-pos="0"]');
+      if (front) {
+        front.classList.remove('is-dragging', 'is-throwing-left', 'is-throwing-right');
+        front.style.removeProperty('--a5-home-drag-x');
+      }
+    };
     const finishDeckGesture = event => {
       const gesture = homeMemoryDeckGesture;
       if (!gesture || gesture.pointerId !== event.pointerId) return;
@@ -2320,22 +2346,41 @@
         homeMemoryDeckGestureFrame = 0;
       }
       const front = rail.querySelector('.a5-home-memory-card[data-home-deck-pos="0"]');
-      if (gesture.moved && Math.abs(gesture.dx) >= 48 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.15) {
-        homeMemoryDeckSuppressClickUntil = performance.now() + 550;
-        front?.classList.remove('is-dragging');
-        front?.classList.add(gesture.dx < 0 ? 'is-throwing-left' : 'is-throwing-right');
-        window.setTimeout(() => {
-          stepHomeMemoryDeck(gesture.dx < 0 ? 1 : -1);
-        }, 165);
-      } else {
-        if (front) {
+      const horizontalSwipe = gesture.moved && Math.abs(gesture.dx) >= 48 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.15;
+      const direction = gesture.dx < 0 ? 1 : -1;
+      const canAdvance = direction > 0 ? homeMemoryDeckIndex < homeMemoryDeckCount - 1 : homeMemoryDeckIndex > 0;
+      if (horizontalSwipe) {
+        homeMemoryDeckSuppressClickUntil = performance.now() + 500;
+        if (canAdvance && front) {
+          homeMemoryDeckBusy = true;
           front.classList.remove('is-dragging');
-          front.style.removeProperty('--a5-home-drag-x');
+          front.classList.add(direction > 0 ? 'is-throwing-left' : 'is-throwing-right');
+          if (homeMemoryDeckTransitionTimer) window.clearTimeout(homeMemoryDeckTransitionTimer);
+          homeMemoryDeckTransitionTimer = window.setTimeout(() => {
+            homeMemoryDeckTransitionTimer = 0;
+            stepHomeMemoryDeck(direction, { force: true });
+          }, 145);
+        } else {
+          // Do not throw the last/first card off-screen when there is nowhere to go.
+          resetDeckGesture();
+          homeMemoryDeckBusy = false;
         }
+      } else {
+        resetDeckGesture();
       }
     };
+    const cancelDeckGesture = event => {
+      const gesture = homeMemoryDeckGesture;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      homeMemoryDeckGesture = null;
+      if (homeMemoryDeckGestureFrame) {
+        window.cancelAnimationFrame(homeMemoryDeckGestureFrame);
+        homeMemoryDeckGestureFrame = 0;
+      }
+      resetDeckGesture();
+    };
     rail.addEventListener('pointerup', finishDeckGesture, { passive: true });
-    rail.addEventListener('pointercancel', finishDeckGesture, { passive: true });
+    rail.addEventListener('pointercancel', cancelDeckGesture, { passive: true });
     window.addEventListener('resize', updateHomeRailControls, { passive: true });
   }
   function renderHomeMedia() {
@@ -2343,7 +2388,10 @@
     if (homeFilter !== 'all') items = items.filter(item => item.media_type === homeFilter);
     if (homeMonthFilter !== 'all') items = items.filter(item => monthKey(item.created_at) === homeMonthFilter);
     if (homeAlbumFilter !== 'all') items = items.filter(item => item.album_name === homeAlbumFilter);
-    items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    // Parse each timestamp once instead of constructing Dates during every comparator call.
+    items = items.map((item, order) => ({ item, order, timestamp: Date.parse(item.created_at || '') || 0 }))
+      .sort((a, b) => b.timestamp - a.timestamp || a.order - b.order)
+      .map(entry => entry.item);
     const matchedCount = items.length;
     const visibleItems = items.slice(0, 14);
     renderHomeMemoryRail($('#homeMediaGrid'), visibleItems);
