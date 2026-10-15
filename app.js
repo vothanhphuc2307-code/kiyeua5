@@ -4605,294 +4605,582 @@
   document.addEventListener('DOMContentLoaded', initialize);
 })();
 
-/* A5 Motion UI v1.1 — integrated additively; index.html does not need extra assets. */
+/* A5 Motion UI v2.0 — adaptive tactile feedback, directional transitions, scroll reveals, and safe gestures. */
 (() => {
   'use strict';
-  if (window.__A5_MOTION_UI_STYLE_LOADED__) return;
-  window.__A5_MOTION_UI_STYLE_LOADED__ = true;
-  const style = document.createElement('style');
-  style.id = 'a5-motion-ui-styles';
-  style.textContent = "/* A5 Motion UI — springy touch feedback, soft page reveals, and safe swipe surfaces. */\n:root {\n  --a5-motion-spring: cubic-bezier(.22, 1, .36, 1);\n  --a5-motion-smooth: cubic-bezier(.2, .8, .2, 1);\n}\n\nhtml { scroll-behavior: smooth; }\nbutton, a, [role=\"button\"], .nav-item, .mobile-nav-item,\n.filter-pill, .reaction-pill, .reaction-picker-choice,\n.person-card, .memory-card, .media-card, .notification-row,\n.on-this-day-item, .person-view-button, .comment-open-button {\n  -webkit-tap-highlight-color: transparent;\n  touch-action: manipulation;\n}\n\n/* The individual `scale` property keeps existing transforms/Polaroid rotations intact. */\n.a5-motion-pressable {\n  transition-property: scale, filter, box-shadow;\n  transition-duration: 280ms, 180ms, 280ms;\n  transition-timing-function: var(--a5-motion-spring), ease, var(--a5-motion-smooth);\n  transform-origin: center;\n}\n.a5-motion-pressable.a5-motion-pressed {\n  scale: .965;\n  filter: brightness(.985) saturate(1.025);\n}\n.a5-motion-pressable.a5-motion-pop {\n  animation: a5-soft-pop 360ms var(--a5-motion-spring) both;\n}\n\n/* Cards compress only slightly: tactile without making the whole page jump. */\n.person-card.a5-motion-pressed,\n.memory-card.a5-motion-pressed,\n.media-card.a5-motion-pressed,\n.notification-row.a5-motion-pressed,\n.on-this-day-item.a5-motion-pressed {\n  scale: .988;\n  filter: brightness(.992);\n}\n\n@keyframes a5-soft-pop {\n  0% { scale: .965; }\n  58% { scale: 1.018; }\n  100% { scale: 1; }\n}\n\n/* A restrained iOS-like lift/fade for view changes. */\n.a5-motion-page-enter {\n  animation: a5-page-enter 440ms var(--a5-motion-spring) both;\n}\n@keyframes a5-page-enter {\n  from { opacity: 0; translate: 0 10px; scale: .992; filter: blur(2px); }\n  to { opacity: 1; translate: 0 0; scale: 1; filter: blur(0); }\n}\n\n.a5-motion-backdrop-enter {\n  animation: a5-backdrop-enter 240ms ease-out both !important;\n}\n@keyframes a5-backdrop-enter {\n  from { opacity: 0; }\n  to { opacity: 1; }\n}\n.a5-motion-surface-enter {\n  animation: a5-surface-enter 420ms var(--a5-motion-spring) both !important;\n}\n@keyframes a5-surface-enter {\n  from { opacity: 0; translate: 0 18px; scale: .985; filter: blur(3px); }\n  to { opacity: 1; translate: 0 0; scale: 1; filter: blur(0); }\n}\n\n/* Only surfaces that have real previous/next controls receive this class. */\n.a5-motion-swipe-surface {\n  touch-action: pan-y pinch-zoom;\n  overscroll-behavior-inline: contain;\n}\n.a5-motion-swipe-surface.a5-motion-swiping {\n  cursor: grabbing;\n  user-select: none;\n  -webkit-user-select: none;\n}\n\n@media (hover: hover) and (pointer: fine) {\n  button:not(:disabled), a[href], [role=\"button\"],\n  .nav-item, .mobile-nav-item, .filter-pill, .reaction-pill,\n  .reaction-picker-choice, .person-card, .memory-card, .media-card,\n  .notification-row, .on-this-day-item, .person-view-button {\n    transition-timing-function: var(--a5-motion-smooth);\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  html { scroll-behavior: auto; }\n  .a5-motion-pressable,\n  .a5-motion-pressable.a5-motion-pop,\n  .a5-motion-pressed,\n  .a5-motion-page-enter,\n  .a5-motion-backdrop-enter,\n  .a5-motion-surface-enter {\n    animation: none !important;\n    transition: none !important;\n    filter: none !important;\n    translate: none !important;\n    scale: 1 !important;\n  }\n}\n";
-  (document.head || document.documentElement).appendChild(style);
-})();
-
-/* A5 Motion UI — additive enhancement; does not replace or patch app.js. */
-(() => {
-  'use strict';
-  if (window.__A5_MOTION_UI_LOADED__) return;
+  if (window.__A5_MOTION_UI_LOADED__ || document.getElementById('a5-motion-ui-v2-styles')) return;
   window.__A5_MOTION_UI_LOADED__ = true;
+  window.__A5_MOTION_UI_VERSION__ = '2.0.0';
 
+  const CSS = String.raw`/* A5 Motion UI v2.0 — low-cost motion, no animation loops. */
+:root {
+  --a5-motion-spring: cubic-bezier(.22, 1, .36, 1);
+  --a5-motion-smooth: cubic-bezier(.2, .8, .2, 1);
+  --a5-motion-fast: 180ms;
+  --a5-motion-page-time: 420ms;
+}
+button, a, [role="button"], .nav-item, .mobile-nav-item,
+.filter-pill, .reaction-pill, .reaction-picker-choice,
+.person-card, .memory-card, .media-card, .notification-row,
+.on-this-day-item, .person-view-button, .comment-open-button {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.a5-motion-pressable {
+  transform-origin: center;
+}
+.a5-motion-pressable.a5-motion-pressed { animation: a5-motion-press-in 90ms ease-out both; filter: brightness(.985) saturate(1.025); }
+.a5-motion-pressable.a5-motion-pop { animation: a5-motion-soft-pop 360ms var(--a5-motion-spring) both; }
+.person-card.a5-motion-pressed,
+.memory-card.a5-motion-pressed,
+.media-card.a5-motion-pressed,
+.notification-row.a5-motion-pressed,
+.on-this-day-item.a5-motion-pressed,
+.profile-archive-tile.a5-motion-pressed { animation: a5-motion-card-press-in 90ms ease-out both; filter: brightness(.992); }
+@keyframes a5-motion-press-in { from { scale: 1; } to { scale: .965; } }
+@keyframes a5-motion-card-press-in { from { scale: 1; } to { scale: .988; } }
+@keyframes a5-motion-soft-pop {
+  0% { scale: .965; }
+  58% { scale: 1.016; }
+  100% { scale: 1; }
+}
+@media (hover: hover) and (pointer: fine) {
+  .a5-motion-hoverable { transition-timing-function: var(--a5-motion-smooth); }
+  .a5-motion-hoverable:hover { animation: a5-motion-hover-lift 180ms ease-out both; }
+  .a5-motion-hoverable:active { animation: none; }
+  @keyframes a5-motion-hover-lift { from { translate: 0 0; } to { translate: 0 -1.5px; } }
+}
+.a5-motion-pressable:focus-visible,
+.a5-motion-hoverable:focus-visible {
+  outline: 2px solid rgba(217,138,170,.82);
+  outline-offset: 3px;
+}
+
+/* Soft ink ripple only on simple action buttons, never on form fields or media tiles. */
+.a5-motion-ripple-host { isolation: isolate; overflow: hidden; }
+.a5-motion-ripple-needs-position { position: relative !important; }
+.a5-motion-ripple {
+  position: absolute; display: block; border-radius: 50%; pointer-events: none;
+  z-index: 2; background: rgba(255,255,255,.30); mix-blend-mode: screen;
+  transform: scale(.06); opacity: .32; animation: a5-motion-ripple-out 580ms var(--a5-motion-smooth) forwards;
+}
+@keyframes a5-motion-ripple-out {
+  0% { transform: scale(.06); opacity: .32; }
+  100% { transform: scale(1); opacity: 0; }
+}
+
+/* Directional transitions are driven by the page the user actually opens. */
+.page-view.a5-motion-page-enter {
+  animation: a5-motion-view-enter var(--a5-motion-page-time) var(--a5-motion-spring) both;
+}
+@keyframes a5-motion-view-enter {
+  from { opacity: 0; translate: var(--a5-motion-enter-x, 14px) 0; scale: .992; }
+  to { opacity: 1; translate: 0 0; scale: 1; }
+}
+.a5-motion-backdrop-enter { animation: a5-motion-backdrop-in 230ms ease-out both !important; }
+.a5-motion-surface-enter { animation: a5-motion-surface-in 390ms var(--a5-motion-spring) both !important; }
+@keyframes a5-motion-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes a5-motion-surface-in {
+  from { opacity: 0; translate: 0 15px; scale: .988; }
+  to { opacity: 1; translate: 0 0; scale: 1; }
+}
+
+/* Small staggered reveals for cards as they enter the viewport. */
+.a5-motion-reveal-pending:not(.a5-motion-revealed) {
+  opacity: 0;
+}
+.a5-motion-reveal-pending.a5-motion-revealed {
+  animation: a5-motion-reveal-in 460ms var(--a5-motion-spring) both;
+  animation-delay: var(--a5-motion-stagger, 0ms);
+}
+@keyframes a5-motion-reveal-in {
+  from { opacity: 0; translate: 0 12px; scale: .988; }
+  to { opacity: 1; translate: 0 0; scale: 1; }
+}
+
+/* Swipe feedback is enabled only for a container that already has paired page controls. */
+.a5-motion-swipe-surface { touch-action: pan-y pinch-zoom; overscroll-behavior-inline: contain; transition: translate 220ms var(--a5-motion-spring); }
+.a5-motion-swipe-surface.a5-motion-swiping { cursor: grabbing; user-select: none; -webkit-user-select: none; transition: none; translate: clamp(-22px, var(--a5-motion-swipe-x, 0px), 22px) 0; }
+
+/* Pull down to dismiss the media viewer, like a native photo sheet. */
+#mediaViewerModal .media-viewer-card.a5-motion-sheet-dragging { transition: none !important; translate: 0 var(--a5-motion-sheet-y, 0px); }
+#mediaViewerModal .media-viewer-card.a5-motion-sheet-return { transition: translate 230ms var(--a5-motion-spring); translate: 0 var(--a5-motion-sheet-y, 0px); }
+
+/* Subtle image arrival: it never hides an image before its load event. */
+img.a5-motion-image-arrive { animation: a5-motion-image-in 300ms ease-out both; }
+@keyframes a5-motion-image-in { from { opacity: .45; } to { opacity: 1; } }
+.a5-motion-value-pop { animation: a5-motion-value-pop 380ms var(--a5-motion-spring) both; transform-origin: center; }
+@keyframes a5-motion-value-pop { 0% { scale: .88; opacity: .55; } 65% { scale: 1.035; opacity: 1; } 100% { scale: 1; opacity: 1; } }
+
+/* Responsive touch feel stays light on modest phones and laptops. */
+@media (max-width: 760px) {
+  .a5-motion-pressable.a5-motion-pressed { scale: .975; }
+  .person-card.a5-motion-pressed, .memory-card.a5-motion-pressed,
+  .media-card.a5-motion-pressed, .on-this-day-item.a5-motion-pressed,
+  .profile-archive-tile.a5-motion-pressed { scale: .992; }
+  .page-view.a5-motion-page-enter { animation-duration: 350ms; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .a5-motion-pressable, .a5-motion-pressable.a5-motion-pop,
+  .a5-motion-pressed, .a5-motion-hoverable, .page-view.a5-motion-page-enter,
+  .a5-motion-backdrop-enter, .a5-motion-surface-enter,
+  .a5-motion-reveal-pending, .a5-motion-value-pop,
+  img.a5-motion-image-arrive {
+    animation: none !important; transition: none !important; filter: none !important;
+    translate: none !important; scale: 1 !important; opacity: 1 !important;
+  }
+  .a5-motion-ripple { animation: none !important; opacity: 0 !important; }
+  .a5-motion-reveal-pending:not(.a5-motion-revealed) { opacity: 1; translate: none; scale: 1; }
+  #mediaViewerModal .media-viewer-card.a5-motion-sheet-dragging,
+  #mediaViewerModal .media-viewer-card.a5-motion-sheet-return { translate: none !important; }
+}
+`;
+  const style = document.createElement('style');
+  style.id = 'a5-motion-ui-v2-styles';
+  style.textContent = CSS;
+  (document.head || document.documentElement).appendChild(style);
+
+  const reduceMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+  const asElement = node => node instanceof Element ? node : node?.parentElement || null;
+  const normalize = value => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
   const PRESS_SELECTOR = [
-    'button:not(:disabled)', 'a[href]', '[role="button"]',
-    '.nav-item', '.mobile-nav-item', '.filter-pill', '.reaction-pill',
-    '.reaction-picker-choice', '.person-card', '.memory-card', '.media-card',
-    '.notification-row', '.on-this-day-item', '.person-view-button',
-    '.comment-open-button', '.viewer-close', '.modal-close',
-    '.top-icon-button', '.top-avatar', '.quick-avatars > *'
+    'button:not(:disabled)', 'a[href]', '[role="button"]', '.nav-item', '.mobile-nav-item',
+    '.filter-pill', '.reaction-pill', '.reaction-picker-choice', '.person-card', '.memory-card',
+    '.media-card', '.notification-row', '.on-this-day-item', '.person-view-button',
+    '.comment-open-button', '.viewer-close', '.modal-close', '.top-icon-button', '.top-avatar',
+    '.profile-archive-tile', '.yearbook-media-button', '.quick-avatars > *'
   ].join(',');
-
+  const RIPPLE_SELECTOR = [
+    'button.primary-button', 'button.outline-button', 'button.subtle-button',
+    'button.yearbook-open-button', 'button.yearbook-page-button', 'button.a5-wish-page-button',
+    'button.people-mode-button', 'button.a5-chat-new-button', 'button.a5-chat-send-button',
+    'button.filter-pill', 'button.nav-item', 'button.mobile-nav-item'
+  ].join(',');
   const BACKDROPS = '.modal-backdrop, .confirm-backdrop, .media-viewer-backdrop, .viewer-media-backdrop';
   const SURFACES = '.modal-card, .media-viewer-card, .profile-modal-card, .reactions-modal-card, .media-editor-modal, .crop-editor-modal';
   const MOTION_TARGETS = `${BACKDROPS}, ${SURFACES}`;
+  const REVEAL_SELECTOR = [
+    '.media-card', '.memory-card', '.person-card', '.on-this-day-item', '.profile-archive-tile',
+    '.profile-stat', '.dream-profile-card', '.yearbook-intro-note', '.yearbook-cover'
+  ].join(',');
+  const PAGE_ORDER = ['home', 'gallery', 'yearbook', 'people', 'profile', 'chat'];
+  const COUNTER_SELECTOR = [
+    '#heroPeopleCount', '#peopleCount', '#classroomSeatCount', '#myPhotoCount', '#myVideoCount',
+    '#myReactionCount', '#yearbookCoverCount', '#notificationBadge', '#a5ChatOnlineSummary',
+    '#a5ChatConversationCount'
+  ].join(',');
   const activePointers = new Map();
-  const lastSwipe = { surface: null, at: 0 };
-  const seenModalVisibility = new WeakMap();
-  const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
-
-  const asElement = (node) => node instanceof Element ? node : node?.parentElement || null;
-  const normalize = (value) => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+  const lastGesture = { target: null, at: 0 };
+  const visibilityState = new WeakMap();
+  const pageActiveState = new WeakMap();
+  const counterValues = new WeakMap();
+  const targetObservers = new WeakMap();
+  const processedInteractive = new WeakSet();
+  const processedReveal = new WeakSet();
+  const processedCounters = new WeakSet();
+  let revealObserver = null;
+  let bodyObserver = null;
 
   function setPressable(el) {
-    if (!el || !el.classList) return;
-    el.classList.add('a5-motion-pressable');
+    if (el && !processedInteractive.has(el)) {
+      processedInteractive.add(el);
+      el.classList.add('a5-motion-pressable');
+      if (window.matchMedia?.('(hover: hover) and (pointer: fine)').matches) el.classList.add('a5-motion-hoverable');
+    }
   }
-  function clearPress(pointerId, { pop = false } = {}) {
+  function safeRipple(el, event) {
+    if (reduceMotion() || !el?.matches?.(RIPPLE_SELECTOR)) return;
+    const rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    // Bound active ripples so quick repeated taps cannot accumulate DOM nodes.
+    el.querySelectorAll(':scope > .a5-motion-ripple').forEach((ripple, index) => { if (index > 0) ripple.remove(); });
+    const ripple = document.createElement('span');
+    ripple.className = 'a5-motion-ripple';
+    ripple.setAttribute('aria-hidden', 'true');
+    const diameter = Math.ceil(Math.max(rect.width, rect.height) * 1.7);
+    ripple.style.width = `${diameter}px`;
+    ripple.style.height = `${diameter}px`;
+    ripple.style.left = `${Math.max(0, Math.min(rect.width, event.clientX - rect.left))}px`;
+    ripple.style.top = `${Math.max(0, Math.min(rect.height, event.clientY - rect.top))}px`;
+    ripple.style.marginLeft = `${-diameter / 2}px`;
+    ripple.style.marginTop = `${-diameter / 2}px`;
+    const position = getComputedStyle(el).position;
+    if (position === 'static') el.classList.add('a5-motion-ripple-needs-position');
+    el.classList.add('a5-motion-ripple-host');
+    el.appendChild(ripple);
+    window.setTimeout(() => ripple.remove(), 680);
+  }
+  function clearPress(pointerId, pop = false) {
     const entry = activePointers.get(pointerId);
     if (!entry) return;
     activePointers.delete(pointerId);
     if (entry.pressEl) {
       entry.pressEl.classList.remove('a5-motion-pressed');
-      if (pop && !entry.moved && !reducedMotion()) {
+      if (pop && !entry.moved && !reduceMotion()) {
         entry.pressEl.classList.remove('a5-motion-pop');
-        // Restart only this short release animation.
         void entry.pressEl.offsetWidth;
         entry.pressEl.classList.add('a5-motion-pop');
         window.setTimeout(() => entry.pressEl?.classList.remove('a5-motion-pop'), 420);
       }
     }
-    if (entry.swipeSurface) entry.swipeSurface.classList.remove('a5-motion-swiping');
+    if (entry.swipeSurface) {
+      entry.swipeSurface.classList.remove('a5-motion-swiping');
+      entry.swipeSurface.style.removeProperty('--a5-motion-swipe-x');
+    }
+    if (entry.viewerCard) settleViewerCard(entry.viewerCard);
   }
-
-  function isBlockedSwipeTarget(el) {
+  function blockedTouchTarget(el) {
     return !!el?.closest('button, a, input, textarea, select, option, [contenteditable="true"], video, audio, canvas, .viewer-actions, .viewer-close, .modal-close, [data-a5-no-swipe]');
   }
-
   function buttonLabel(button) {
     return normalize([
-      button.getAttribute('aria-label'), button.getAttribute('title'),
-      button.getAttribute('data-direction'), button.getAttribute('data-action'),
-      button.className, button.textContent
+      button.getAttribute('aria-label'), button.getAttribute('title'), button.getAttribute('data-direction'),
+      button.getAttribute('data-action'), button.className, button.textContent
     ].filter(Boolean).join(' '));
   }
   function findDirection(buttons, direction) {
-    const prevRe = /\b(prev|previous|back|before|left|trai|truoc|quay lai|trang truoc|ve trang truoc)\b|←|‹|❮|⟵|chevron-left|arrow-left/;
-    const nextRe = /\b(next|forward|after|right|tiep|sau|trang sau|tiep theo|trang tiep)\b|→|›|❯|⟶|chevron-right|arrow-right/;
+    const prevRe = /\b(prev|previous|back|before|left|trai|truoc|quay lai|trang truoc|ve trang truoc|moi hon)\b|←|‹|❮|⟵|chevron-left|arrow-left/;
+    const nextRe = /\b(next|forward|after|right|tiep|sau|trang sau|tiep theo|trang tiep|cu hon)\b|→|›|❯|⟶|chevron-right|arrow-right/;
     const re = direction === 'prev' ? prevRe : nextRe;
-    return buttons.find((button) => re.test(buttonLabel(button))) || null;
+    return buttons.find(button => re.test(buttonLabel(button))) || null;
   }
   function findSwipeSurface(start) {
-    // The yearbook already has its own native swipe handler in app.js; do not double-trigger it.
+    // The yearbook spread owns its own swipe; do not fire its page-turn logic twice.
     if (start?.closest?.('.yearbook-spread, [data-a5-native-swipe]')) return null;
     let current = start;
-    for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {
+    for (let depth = 0; current && depth < 7; depth += 1, current = current.parentElement) {
       if (current === document.body || current === document.documentElement || current.classList?.contains('app-shell')) break;
-      const buttons = Array.from(current.querySelectorAll('button, a[role="button"], [role="button"]')).filter((button) => {
+      const buttons = Array.from(current.querySelectorAll('button, a[role="button"], [role="button"]')).filter(button => {
         const style = getComputedStyle(button);
         return style.display !== 'none' && style.visibility !== 'hidden' && !button.disabled && button.getAttribute('aria-disabled') !== 'true';
       });
       const prev = findDirection(buttons, 'prev');
       const next = findDirection(buttons, 'next');
-      if (prev && next) {
+      const hasPageContent = !!current.querySelector('.viewer-media-content, .profile-archive-tiles, [data-page], [data-slide], [data-spread], [class*="archive-pager"], [class*="album-page"]');
+      if (prev && next && hasPageContent) {
         current.classList.add('a5-motion-swipe-surface');
         return { surface: current, prev, next };
       }
     }
     return null;
   }
-
+  function beginViewerDrag(event, target) {
+    if (event.pointerType === 'mouse' || blockedTouchTarget(target)) return null;
+    const card = target.closest('#mediaViewerModal .media-viewer-card, .media-viewer-backdrop .media-viewer-card');
+    return card ? { card, dragging: false } : null;
+  }
   function onPointerDown(event) {
     if (event.isPrimary === false || (event.pointerType === 'mouse' && event.button !== 0)) return;
     const target = asElement(event.target);
     if (!target) return;
-
     const pressEl = target.closest(PRESS_SELECTOR);
     if (pressEl && !pressEl.matches(':disabled, [aria-disabled="true"]')) {
       setPressable(pressEl);
       pressEl.classList.remove('a5-motion-pop');
       pressEl.classList.add('a5-motion-pressed');
+      safeRipple(pressEl, event);
     }
-
-    let swipeInfo = null;
-    if (event.pointerType !== 'mouse' && !isBlockedSwipeTarget(target)) swipeInfo = findSwipeSurface(target);
+    const viewerGesture = beginViewerDrag(event, target);
+    const swipeInfo = event.pointerType !== 'mouse' && !blockedTouchTarget(target) ? findSwipeSurface(target) : null;
+    if (!pressEl && !viewerGesture && !swipeInfo) return;
     activePointers.set(event.pointerId, {
-      startX: event.clientX,
-      startY: event.clientY,
-      lastX: event.clientX,
-      lastY: event.clientY,
-      moved: false,
-      pressEl: pressEl || null,
-      swipeSurface: swipeInfo?.surface || null,
-      swipePrev: swipeInfo?.prev || null,
-      swipeNext: swipeInfo?.next || null
+      startX: event.clientX, startY: event.clientY, lastX: event.clientX, lastY: event.clientY,
+      moved: false, pressEl: pressEl || null, viewerCard: viewerGesture?.card || null,
+      viewerDragging: false, swipeSurface: swipeInfo?.surface || null,
+      swipePrev: swipeInfo?.prev || null, swipeNext: swipeInfo?.next || null
     });
   }
-
   function onPointerMove(event) {
     const entry = activePointers.get(event.pointerId);
     if (!entry) return;
-    entry.lastX = event.clientX;
-    entry.lastY = event.clientY;
+    entry.lastX = event.clientX; entry.lastY = event.clientY;
     const dx = event.clientX - entry.startX;
     const dy = event.clientY - entry.startY;
-    if (Math.abs(dx) > 11 || Math.abs(dy) > 11) {
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
       entry.moved = true;
       entry.pressEl?.classList.remove('a5-motion-pressed');
     }
+    if (entry.viewerCard && dy > 8 && dy > Math.abs(dx) * 1.15) {
+      entry.viewerDragging = true;
+      entry.viewerCard.classList.add('a5-motion-sheet-dragging');
+      entry.viewerCard.style.setProperty('--a5-motion-sheet-y', `${Math.max(0, Math.min(180, dy))}px`);
+    }
     if (entry.swipeSurface && Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.25) {
       entry.swipeSurface.classList.add('a5-motion-swiping');
+      entry.swipeSurface.style.setProperty('--a5-motion-swipe-x', `${Math.max(-22, Math.min(22, dx * .22))}px`);
     }
   }
-
-  function onPointerUp(event, allowSwipe = true) {
+  function settleViewerCard(card) {
+    if (!card) return;
+    card.classList.remove('a5-motion-sheet-dragging');
+    card.classList.add('a5-motion-sheet-return');
+    card.style.setProperty('--a5-motion-sheet-y', '0px');
+    window.setTimeout(() => {
+      card.classList.remove('a5-motion-sheet-return');
+      card.style.removeProperty('--a5-motion-sheet-y');
+    }, 260);
+  }
+  function onPointerUp(event) {
     const entry = activePointers.get(event.pointerId);
     if (!entry) return;
     const dx = event.clientX - entry.startX;
     const dy = event.clientY - entry.startY;
-    const isHorizontalSwipe = allowSwipe && entry.swipeSurface && Math.abs(dx) >= 58 && Math.abs(dy) < 76 && Math.abs(dx) > Math.abs(dy) * 1.2;
+    const isHorizontalSwipe = entry.swipeSurface && Math.abs(dx) >= 64 && Math.abs(dy) < 78 && Math.abs(dx) > Math.abs(dy) * 1.22;
     const directionButton = isHorizontalSwipe ? (dx < 0 ? entry.swipeNext : entry.swipePrev) : null;
-    clearPress(event.pointerId, { pop: !entry.moved && !isHorizontalSwipe });
-
-    if (directionButton && !directionButton.disabled && directionButton.getAttribute('aria-disabled') !== 'true') {
-      // Trigger the existing page control so app state remains owned by the site.
+    const dismissViewer = Boolean(entry.viewerCard && entry.viewerDragging && dy >= 112 && dy > Math.abs(dx) * 1.25);
+    const viewerCard = entry.viewerCard;
+    const swipeSurface = entry.swipeSurface;
+    clearPress(event.pointerId, !entry.moved && !isHorizontalSwipe && !entry.viewerDragging);
+    if (dismissViewer && viewerCard) {
+      lastGesture.target = viewerCard; lastGesture.at = performance.now();
+      const close = viewerCard.querySelector('[data-action="close-modal"], [data-action="viewer-close"], .viewer-close');
+      close?.click();
+    } else if (directionButton && !directionButton.disabled && directionButton.getAttribute('aria-disabled') !== 'true') {
       directionButton.click();
-      lastSwipe.surface = entry.swipeSurface;
-      lastSwipe.at = performance.now();
+      lastGesture.target = swipeSurface; lastGesture.at = performance.now();
     }
   }
-
   function onClickCapture(event) {
-    // Some browsers still send a click after a completed swipe. Ignore only that accidental click.
     const target = asElement(event.target);
-    if (event.isTrusted && lastSwipe.surface && performance.now() - lastSwipe.at < 420 && target && lastSwipe.surface.contains(target)) {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      lastSwipe.surface = null;
+    if (event.isTrusted && lastGesture.target && performance.now() - lastGesture.at < 420 && target && lastGesture.target.contains(target)) {
+      event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation();
+      lastGesture.target = null;
     }
   }
 
-  function isVisible(el) {
+  function visible(el) {
     if (!el?.isConnected) return false;
     const style = getComputedStyle(el);
     return style.display !== 'none' && style.visibility !== 'hidden' && el.getClientRects().length > 0;
   }
-  function enterMotion(el) {
-    if (!el || reducedMotion()) return;
-    const isBackdrop = el.matches(BACKDROPS);
-    const cls = isBackdrop ? 'a5-motion-backdrop-enter' : 'a5-motion-surface-enter';
-    el.classList.remove(cls);
+  function animateClass(el, className, duration = 520) {
+    if (!el || reduceMotion()) return;
+    el.classList.remove(className);
     void el.offsetWidth;
-    el.classList.add(cls);
-    const remove = () => el.classList.remove(cls);
-    el.addEventListener('animationend', remove, { once: true });
-    window.setTimeout(remove, 650);
+    el.classList.add(className);
+    const clean = () => el.classList.remove(className);
+    el.addEventListener('animationend', clean, { once: true });
+    window.setTimeout(clean, duration);
   }
-  function processMotionTarget(el) {
+  function updateModalVisibility(el) {
     if (!el.matches?.(MOTION_TARGETS)) return;
-    const visibleNow = isVisible(el);
-    const wasVisible = seenModalVisibility.get(el) === true;
-    seenModalVisibility.set(el, visibleNow);
-    if (visibleNow && !wasVisible) enterMotion(el);
+    const nowVisible = visible(el);
+    const previouslyVisible = visibilityState.get(el) === true;
+    visibilityState.set(el, nowVisible);
+    if (el.matches(BACKDROPS)) {
+      const surfaces = el.querySelectorAll(SURFACES);
+      if (!nowVisible) { surfaces.forEach(surface => visibilityState.set(surface, false)); return; }
+      if (previouslyVisible) return;
+      animateClass(el, 'a5-motion-backdrop-enter', 360);
+      surfaces.forEach(surface => {
+        visibilityState.set(surface, true);
+        animateClass(surface, 'a5-motion-surface-enter', 520);
+      });
+      return;
+    }
+    if (nowVisible && !previouslyVisible) animateClass(el, 'a5-motion-surface-enter', 520);
   }
-  function scanAddedNode(node) {
-    const el = asElement(node);
-    if (!el) return;
-    if (el.matches(MOTION_TARGETS)) processMotionTarget(el);
-    el.querySelectorAll?.(MOTION_TARGETS).forEach(processMotionTarget);
+  function updatePageVisibility(el, initial = false) {
+    if (!el.matches?.('.page-view')) return;
+    const nowActive = el.classList.contains('active') && visible(el);
+    const wasActive = pageActiveState.get(el) === true;
+    pageActiveState.set(el, nowActive);
+    if (!nowActive || wasActive || initial || reduceMotion()) return;
+    const tab = String(el.id || '').replace(/^page-/, '');
+    const index = PAGE_ORDER.indexOf(tab);
+    const prior = window.__A5_MOTION_LAST_TAB__ || 'home';
+    const priorIndex = PAGE_ORDER.indexOf(prior);
+    const direction = index >= 0 && priorIndex >= 0 && index < priorIndex ? -1 : 1;
+    el.style.setProperty('--a5-motion-enter-x', `${direction * 15}px`);
+    animateClass(el, 'a5-motion-page-enter', 560);
+    window.__A5_MOTION_LAST_TAB__ = tab;
+    window.requestAnimationFrame(() => scanReveal(el));
   }
-
-  let swipePreparationQueued = false;
-  function prepareSwipeSurfaces(root = document) {
-    const buttonSelector = 'button, a[role="button"], [role="button"]';
-    const buttons = Array.from(root.querySelectorAll?.(buttonSelector) || []);
-    const previousButtons = buttons.filter((button) => /\b(prev|previous|back|before|left|trai|truoc|quay lai|trang truoc|ve trang truoc)\b|←|‹|❮|⟵|chevron-left|arrow-left/.test(buttonLabel(button)));
-    for (const previous of previousButtons) {
-      let parent = previous.parentElement;
-      for (let depth = 0; parent && depth < 8; depth += 1, parent = parent.parentElement) {
-        if (parent === document.body || parent === document.documentElement || parent.classList?.contains('app-shell')) break;
-        // Do not tag ancestors of the yearbook: its original page-turn gesture already works.
-        if (parent.querySelector('.yearbook-spread, [data-a5-native-swipe]')) continue;
-        const controls = Array.from(parent.querySelectorAll(buttonSelector)).filter((button) => {
-          const style = getComputedStyle(button);
-          return style.display !== 'none' && style.visibility !== 'hidden' && !button.disabled && button.getAttribute('aria-disabled') !== 'true';
-        });
-        if (!findDirection(controls, 'prev') || !findDirection(controls, 'next')) continue;
-        const hasPageContent = !!parent.querySelector('.viewer-media-content, img, video, [data-page], [data-slide], [data-spread], [class*="yearbook"], [class*="book-page"], [class*="album-page"]');
-        if (hasPageContent) {
-          parent.classList.add('a5-motion-swipe-surface');
-          break;
-        }
-      }
+  function observeMotionTarget(el) {
+    if (!el || targetObservers.has(el)) return;
+    if (!el.matches?.(`${MOTION_TARGETS}, .page-view`)) return;
+    const observer = new MutationObserver(() => {
+      if (el.matches('.page-view')) updatePageVisibility(el);
+      else updateModalVisibility(el);
+    });
+    observer.observe(el, { attributes: true, attributeFilter: ['class', 'style', 'hidden', 'open'] });
+    targetObservers.set(el, observer);
+    if (el.matches('.page-view')) {
+      pageActiveState.set(el, el.classList.contains('active') && visible(el));
+    } else {
+      visibilityState.set(el, visible(el));
     }
   }
-  function scheduleSwipePreparation() {
-    if (swipePreparationQueued) return;
-    swipePreparationQueued = true;
-    window.requestAnimationFrame(() => {
-      swipePreparationQueued = false;
-      prepareSwipeSurfaces(document);
-    });
+  function rootScope(root) {
+    const node = root instanceof Element ? root : null;
+    const scope = node || (root && typeof root.querySelectorAll === 'function' ? root : document);
+    return { node, scope };
   }
-
-  function animatePageContent() {
-    if (reducedMotion()) return;
-    const host = document.querySelector('.page-content');
-    if (!host) return;
-    const candidates = Array.from(host.children).filter((el) => {
-      const style = getComputedStyle(el);
-      return style.display !== 'none' && style.visibility !== 'hidden';
-    }).slice(0, 4);
-    candidates.forEach((el, index) => {
-      el.classList.remove('a5-motion-page-enter');
+  function attachMotionTargets(root) {
+    const { node, scope } = rootScope(root);
+    if (node?.matches?.(`${MOTION_TARGETS}, .page-view`)) observeMotionTarget(node);
+    scope.querySelectorAll?.(`${MOTION_TARGETS}, .page-view`).forEach(observeMotionTarget);
+  }
+  function pageIsActive(el) {
+    const page = el.closest('.page-view');
+    return !page || page.classList.contains('active');
+  }
+  function revealOne(el, order = 0) {
+    if (!el || processedReveal.has(el) || !pageIsActive(el) || el.closest('.yearbook-spread, .modal-backdrop, [data-a5-no-reveal]')) return;
+    processedReveal.add(el);
+    if (reduceMotion() || !revealObserver) return;
+    el.style.setProperty('--a5-motion-stagger', `${Math.min(order, 6) * 28}ms`);
+    el.classList.add('a5-motion-reveal-pending');
+    revealObserver.observe(el);
+    // Never leave content transparent if the observer cannot deliver (e.g. background tabs).
+    window.setTimeout(() => {
+      if (el.isConnected && el.classList.contains('a5-motion-reveal-pending') && !el.classList.contains('a5-motion-revealed')) {
+        el.classList.add('a5-motion-revealed');
+        revealObserver?.unobserve(el);
+      }
+    }, 1800);
+  }
+  function scanReveal(root = document) {
+    if (reduceMotion() || !revealObserver) return;
+    const { node, scope } = rootScope(root);
+    const candidates = [];
+    if (node?.matches?.(REVEAL_SELECTOR)) candidates.push(node);
+    scope.querySelectorAll?.(REVEAL_SELECTOR).forEach(candidate => candidates.push(candidate));
+    candidates.slice(0, 120).forEach((candidate, index) => revealOne(candidate, index));
+  }
+  function scanInteractive(root = document) {
+    const { node, scope } = rootScope(root);
+    if (node?.matches?.(PRESS_SELECTOR)) setPressable(node);
+    scope.querySelectorAll?.(PRESS_SELECTOR).forEach(setPressable);
+  }
+  function pulseCounter(el) {
+    if (!el || processedCounters.has(el)) return;
+    processedCounters.add(el);
+    counterValues.set(el, (el.textContent || '').trim());
+    const observer = new MutationObserver(() => {
+      const next = (el.textContent || '').trim();
+      const old = counterValues.get(el) || '';
+      if (next === old) return;
+      counterValues.set(el, next);
+      // Animate meaningful values, but skip loading placeholders and identical number updates.
+      if (!next || /đang|loading|\.\.\./i.test(next) || reduceMotion()) return;
+      el.classList.remove('a5-motion-value-pop');
       void el.offsetWidth;
-      el.style.setProperty('--a5-motion-delay', `${Math.min(index * 32, 96)}ms`);
-      el.classList.add('a5-motion-page-enter');
-      el.style.animationDelay = el.style.getPropertyValue('--a5-motion-delay');
+      el.classList.add('a5-motion-value-pop');
+      window.setTimeout(() => el.classList.remove('a5-motion-value-pop'), 420);
     });
-    window.setTimeout(() => candidates.forEach((el) => {
-      el.classList.remove('a5-motion-page-enter');
-      el.style.removeProperty('--a5-motion-delay');
-      el.style.removeProperty('animation-delay');
-    }), 650);
+    observer.observe(el, { childList: true, characterData: true, subtree: true });
   }
+  function attachCounters(root = document) {
+    const { node, scope } = rootScope(root);
+    if (node?.matches?.(COUNTER_SELECTOR)) pulseCounter(node);
+    scope.querySelectorAll?.(COUNTER_SELECTOR).forEach(pulseCounter);
+  }
+  function enhanceTree(node) {
+    const el = asElement(node);
+    if (!el) return;
+    attachMotionTargets(el);
+    scanInteractive(el);
+    attachCounters(el);
+    scanReveal(el);
+  }
+  function onImageLoad(event) {
+    const img = event.target;
+    if (!(img instanceof HTMLImageElement) || !img.isConnected || reduceMotion()) return;
+    if (!img.closest('.media-card, .memory-card, .person-card, .profile-archive-tile, .public-profile-photo, .a5-chat-avatar, .top-avatar')) return;
+    img.classList.remove('a5-motion-image-arrive');
+    void img.offsetWidth;
+    img.classList.add('a5-motion-image-arrive');
+    window.setTimeout(() => img.classList.remove('a5-motion-image-arrive'), 340);
+  }
+  function bindYearbookDragFeedback() {
+    const spread = document.getElementById('yearbookSpread');
+    if (!spread || spread.dataset.a5MotionDragBound === 'true') return;
+    spread.dataset.a5MotionDragBound = 'true';
+    let start = null;
+    spread.addEventListener('touchstart', event => {
+      if (event.touches.length !== 1) { start = null; return; }
+      const touch = event.touches[0]; start = { x: touch.clientX, y: touch.clientY };
+    }, { passive: true });
+    spread.addEventListener('touchmove', event => {
+      if (!start || event.touches.length !== 1) return;
+      const touch = event.touches[0], dx = touch.clientX - start.x, dy = touch.clientY - start.y;
+      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+        spread.classList.add('a5-motion-yearbook-dragging');
+        spread.style.setProperty('--a5-motion-yearbook-dx', `${Math.max(-18, Math.min(18, dx * .12))}px`);
+      }
+    }, { passive: true });
+    const release = () => {
+      if (!spread.classList.contains('a5-motion-yearbook-dragging')) { start = null; return; }
+      spread.classList.remove('a5-motion-yearbook-dragging');
+      spread.classList.add('a5-motion-yearbook-return');
+      spread.style.setProperty('--a5-motion-yearbook-dx', '0px');
+      window.setTimeout(() => {
+        spread.classList.remove('a5-motion-yearbook-return');
+        spread.style.removeProperty('--a5-motion-yearbook-dx');
+      }, 210);
+      start = null;
+    };
+    spread.addEventListener('touchend', release, { passive: true });
+    spread.addEventListener('touchcancel', release, { passive: true });
+  }
+  // The spread uses individual translate so its existing page-turn transform stays untouched.
+  style.textContent += '\n.yearbook-spread { touch-action: pan-y pinch-zoom; }\n.yearbook-spread.a5-motion-yearbook-dragging { transition: none !important; translate: var(--a5-motion-yearbook-dx, 0px) 0; }\n.yearbook-spread.a5-motion-yearbook-return { transition: translate 190ms var(--a5-motion-spring); translate: var(--a5-motion-yearbook-dx, 0px) 0; }\n@media (prefers-reduced-motion: reduce) { .yearbook-spread.a5-motion-yearbook-dragging, .yearbook-spread.a5-motion-yearbook-return { translate: none !important; } }';
 
   document.addEventListener('pointerdown', onPointerDown, { passive: true, capture: true });
   document.addEventListener('pointermove', onPointerMove, { passive: true, capture: true });
-  document.addEventListener('pointerup', (event) => onPointerUp(event, true), { passive: true, capture: true });
-  document.addEventListener('pointercancel', (event) => clearPress(event.pointerId), { passive: true, capture: true });
+  document.addEventListener('pointerup', onPointerUp, { passive: true, capture: true });
+  document.addEventListener('pointercancel', event => clearPress(event.pointerId), { passive: true, capture: true });
   document.addEventListener('click', onClickCapture, true);
-  window.addEventListener('blur', () => Array.from(activePointers.keys()).forEach((id) => clearPress(id)));
+  document.addEventListener('load', onImageLoad, true);
+  window.addEventListener('blur', () => Array.from(activePointers.keys()).forEach(id => clearPress(id)));
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) Array.from(activePointers.keys()).forEach((id) => clearPress(id));
+    if (document.hidden) Array.from(activePointers.keys()).forEach(id => clearPress(id));
   });
-
-  document.addEventListener('click', (event) => {
+  document.addEventListener('click', event => {
     const target = asElement(event.target);
-    if (!target?.closest('.nav-item, .mobile-nav-item')) return;
-    // Wait for the site's own tab handler to replace the page content, then animate it.
-    window.requestAnimationFrame(() => window.requestAnimationFrame(animatePageContent));
-  });
+    if (!target?.closest('.nav-item, .mobile-nav-item, [data-tab]')) return;
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      const activePage = document.querySelector('.page-view.active');
+      if (activePage) scanReveal(activePage);
+      attachCounters(document);
+    }));
+  }, true);
 
-  const observer = new MutationObserver((mutations) => {
-    let childListChanged = false;
-    for (const mutation of mutations) {
-      if (mutation.type === 'childList') {
-        childListChanged = true;
-        mutation.addedNodes.forEach(scanAddedNode);
-      } else if (mutation.type === 'attributes') {
-        const target = asElement(mutation.target);
-        if (target?.matches(MOTION_TARGETS)) processMotionTarget(target);
-      }
+  const start = () => {
+    if ('IntersectionObserver' in window) {
+      revealObserver = new IntersectionObserver(entries => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.classList.add('a5-motion-revealed');
+          revealObserver.unobserve(entry.target);
+        }
+      }, { root: null, rootMargin: '0px 0px -24px 0px', threshold: .04 });
     }
-    if (childListChanged) scheduleSwipePreparation();
-  });
-  observer.observe(document.documentElement, {
-    subtree: true,
-    childList: true,
-    attributes: true,
-    attributeFilter: ['class', 'style', 'hidden', 'open']
-  });
-  document.querySelectorAll(MOTION_TARGETS).forEach(processMotionTarget);
-  prepareSwipeSurfaces(document);
+    attachMotionTargets(document);
+    document.querySelectorAll('.page-view').forEach(el => updatePageVisibility(el, true));
+    document.querySelectorAll(MOTION_TARGETS).forEach(updateModalVisibility);
+    scanInteractive(document);
+    attachCounters(document);
+    scanReveal(document.querySelector('.page-view.active') || document);
+    bindYearbookDragFeedback();
+    if (typeof MutationObserver === 'function') {
+      bodyObserver = new MutationObserver(mutations => {
+        for (const mutation of mutations) {
+          mutation.addedNodes.forEach(node => {
+            if (node.nodeType !== Node.ELEMENT_NODE) return;
+            enhanceTree(node);
+            // The chat page and several modal surfaces are created dynamically by app.js.
+            if (node.matches?.('#page-chat, .modal-backdrop, .media-viewer-backdrop')) {
+              attachMotionTargets(node);
+              bindYearbookDragFeedback();
+            }
+          });
+        }
+      });
+      bodyObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
+    }
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+  else start();
 })();
-
