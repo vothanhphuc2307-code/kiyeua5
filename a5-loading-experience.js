@@ -149,27 +149,34 @@
     window.clearTimeout(pageWatchTimer);
     const startedAt = performance.now();
     let busySince = 0;
-    let lastLabel = '';
+    // Keep an already-visible loader across rapid navigation only while the new page is busy.
+    // This also lets the next watcher release a stale token left by an interrupted watcher.
+    let lastLabel = owners.get('auto-page') || '';
     let stopped = false;
 
     const step = () => {
       if (stopped) return;
       const now = performance.now();
       const page = activePage();
-      const busyNode = findBusy(page);
 
+      // Do not keep polling the DOM while signed out or between app-shell states.
+      if (!page) {
+        stopped = true;
+        if (lastLabel || owners.has('auto-page')) hide('auto-page');
+        return;
+      }
+
+      const busyNode = findBusy(page);
       if (busyNode) {
         if (!busySince) busySince = now;
         const label = labelFor(page, busyNode);
-        if (now - busySince >= 560) {
-          if (label !== lastLabel) {
-            lastLabel = label;
-            show(label, 'auto-page');
-          }
+        if (now - busySince >= 560 && label !== lastLabel) {
+          lastLabel = label;
+          show(label, 'auto-page');
         }
       } else {
         busySince = 0;
-        if (lastLabel) {
+        if (lastLabel || owners.has('auto-page')) {
           lastLabel = '';
           hide('auto-page');
         }
@@ -180,7 +187,8 @@
         hide('auto-page');
         return;
       }
-      pageWatchTimer = window.setTimeout(step, reduceMotion() ? 260 : 180);
+      // One scan about every 240 ms is enough for a visible loading state and reduces DOM work.
+      pageWatchTimer = window.setTimeout(step, reduceMotion() ? 300 : 240);
     };
     step();
   }

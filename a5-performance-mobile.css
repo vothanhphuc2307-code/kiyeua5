@@ -277,6 +277,13 @@ img, video, canvas, iframe { max-width: 100%; }
     translate: var(--a5-mobile-swipe-x, 0px) 0;
     transition: translate 240ms cubic-bezier(.18, .88, .24, 1.12);
   }
+  /* The motion module also animates the page's individual `translate` property.
+     While a finger drag is active, the gesture owns that property; pausing the
+     enter animation avoids two systems writing to the same value at once. */
+  .page-view.a5-mobile-swipe-dragging,
+  .page-view.a5-mobile-swipe-return {
+    animation: none !important;
+  }
 
   /* A little less blur keeps the glass look while reducing repaint cost on scroll. */
   .topbar {
