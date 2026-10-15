@@ -4604,3 +4604,295 @@
 
   document.addEventListener('DOMContentLoaded', initialize);
 })();
+
+/* A5 Motion UI v1.1 — integrated additively; index.html does not need extra assets. */
+(() => {
+  'use strict';
+  if (window.__A5_MOTION_UI_STYLE_LOADED__) return;
+  window.__A5_MOTION_UI_STYLE_LOADED__ = true;
+  const style = document.createElement('style');
+  style.id = 'a5-motion-ui-styles';
+  style.textContent = "/* A5 Motion UI — springy touch feedback, soft page reveals, and safe swipe surfaces. */\n:root {\n  --a5-motion-spring: cubic-bezier(.22, 1, .36, 1);\n  --a5-motion-smooth: cubic-bezier(.2, .8, .2, 1);\n}\n\nhtml { scroll-behavior: smooth; }\nbutton, a, [role=\"button\"], .nav-item, .mobile-nav-item,\n.filter-pill, .reaction-pill, .reaction-picker-choice,\n.person-card, .memory-card, .media-card, .notification-row,\n.on-this-day-item, .person-view-button, .comment-open-button {\n  -webkit-tap-highlight-color: transparent;\n  touch-action: manipulation;\n}\n\n/* The individual `scale` property keeps existing transforms/Polaroid rotations intact. */\n.a5-motion-pressable {\n  transition-property: scale, filter, box-shadow;\n  transition-duration: 280ms, 180ms, 280ms;\n  transition-timing-function: var(--a5-motion-spring), ease, var(--a5-motion-smooth);\n  transform-origin: center;\n}\n.a5-motion-pressable.a5-motion-pressed {\n  scale: .965;\n  filter: brightness(.985) saturate(1.025);\n}\n.a5-motion-pressable.a5-motion-pop {\n  animation: a5-soft-pop 360ms var(--a5-motion-spring) both;\n}\n\n/* Cards compress only slightly: tactile without making the whole page jump. */\n.person-card.a5-motion-pressed,\n.memory-card.a5-motion-pressed,\n.media-card.a5-motion-pressed,\n.notification-row.a5-motion-pressed,\n.on-this-day-item.a5-motion-pressed {\n  scale: .988;\n  filter: brightness(.992);\n}\n\n@keyframes a5-soft-pop {\n  0% { scale: .965; }\n  58% { scale: 1.018; }\n  100% { scale: 1; }\n}\n\n/* A restrained iOS-like lift/fade for view changes. */\n.a5-motion-page-enter {\n  animation: a5-page-enter 440ms var(--a5-motion-spring) both;\n}\n@keyframes a5-page-enter {\n  from { opacity: 0; translate: 0 10px; scale: .992; filter: blur(2px); }\n  to { opacity: 1; translate: 0 0; scale: 1; filter: blur(0); }\n}\n\n.a5-motion-backdrop-enter {\n  animation: a5-backdrop-enter 240ms ease-out both !important;\n}\n@keyframes a5-backdrop-enter {\n  from { opacity: 0; }\n  to { opacity: 1; }\n}\n.a5-motion-surface-enter {\n  animation: a5-surface-enter 420ms var(--a5-motion-spring) both !important;\n}\n@keyframes a5-surface-enter {\n  from { opacity: 0; translate: 0 18px; scale: .985; filter: blur(3px); }\n  to { opacity: 1; translate: 0 0; scale: 1; filter: blur(0); }\n}\n\n/* Only surfaces that have real previous/next controls receive this class. */\n.a5-motion-swipe-surface {\n  touch-action: pan-y pinch-zoom;\n  overscroll-behavior-inline: contain;\n}\n.a5-motion-swipe-surface.a5-motion-swiping {\n  cursor: grabbing;\n  user-select: none;\n  -webkit-user-select: none;\n}\n\n@media (hover: hover) and (pointer: fine) {\n  button:not(:disabled), a[href], [role=\"button\"],\n  .nav-item, .mobile-nav-item, .filter-pill, .reaction-pill,\n  .reaction-picker-choice, .person-card, .memory-card, .media-card,\n  .notification-row, .on-this-day-item, .person-view-button {\n    transition-timing-function: var(--a5-motion-smooth);\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  html { scroll-behavior: auto; }\n  .a5-motion-pressable,\n  .a5-motion-pressable.a5-motion-pop,\n  .a5-motion-pressed,\n  .a5-motion-page-enter,\n  .a5-motion-backdrop-enter,\n  .a5-motion-surface-enter {\n    animation: none !important;\n    transition: none !important;\n    filter: none !important;\n    translate: none !important;\n    scale: 1 !important;\n  }\n}\n";
+  (document.head || document.documentElement).appendChild(style);
+})();
+
+/* A5 Motion UI — additive enhancement; does not replace or patch app.js. */
+(() => {
+  'use strict';
+  if (window.__A5_MOTION_UI_LOADED__) return;
+  window.__A5_MOTION_UI_LOADED__ = true;
+
+  const PRESS_SELECTOR = [
+    'button:not(:disabled)', 'a[href]', '[role="button"]',
+    '.nav-item', '.mobile-nav-item', '.filter-pill', '.reaction-pill',
+    '.reaction-picker-choice', '.person-card', '.memory-card', '.media-card',
+    '.notification-row', '.on-this-day-item', '.person-view-button',
+    '.comment-open-button', '.viewer-close', '.modal-close',
+    '.top-icon-button', '.top-avatar', '.quick-avatars > *'
+  ].join(',');
+
+  const BACKDROPS = '.modal-backdrop, .confirm-backdrop, .media-viewer-backdrop, .viewer-media-backdrop';
+  const SURFACES = '.modal-card, .media-viewer-card, .profile-modal-card, .reactions-modal-card, .media-editor-modal, .crop-editor-modal';
+  const MOTION_TARGETS = `${BACKDROPS}, ${SURFACES}`;
+  const activePointers = new Map();
+  const lastSwipe = { surface: null, at: 0 };
+  const seenModalVisibility = new WeakMap();
+  const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+
+  const asElement = (node) => node instanceof Element ? node : node?.parentElement || null;
+  const normalize = (value) => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+
+  function setPressable(el) {
+    if (!el || !el.classList) return;
+    el.classList.add('a5-motion-pressable');
+  }
+  function clearPress(pointerId, { pop = false } = {}) {
+    const entry = activePointers.get(pointerId);
+    if (!entry) return;
+    activePointers.delete(pointerId);
+    if (entry.pressEl) {
+      entry.pressEl.classList.remove('a5-motion-pressed');
+      if (pop && !entry.moved && !reducedMotion()) {
+        entry.pressEl.classList.remove('a5-motion-pop');
+        // Restart only this short release animation.
+        void entry.pressEl.offsetWidth;
+        entry.pressEl.classList.add('a5-motion-pop');
+        window.setTimeout(() => entry.pressEl?.classList.remove('a5-motion-pop'), 420);
+      }
+    }
+    if (entry.swipeSurface) entry.swipeSurface.classList.remove('a5-motion-swiping');
+  }
+
+  function isBlockedSwipeTarget(el) {
+    return !!el?.closest('button, a, input, textarea, select, option, [contenteditable="true"], video, audio, canvas, .viewer-actions, .viewer-close, .modal-close, [data-a5-no-swipe]');
+  }
+
+  function buttonLabel(button) {
+    return normalize([
+      button.getAttribute('aria-label'), button.getAttribute('title'),
+      button.getAttribute('data-direction'), button.getAttribute('data-action'),
+      button.className, button.textContent
+    ].filter(Boolean).join(' '));
+  }
+  function findDirection(buttons, direction) {
+    const prevRe = /\b(prev|previous|back|before|left|trai|truoc|quay lai|trang truoc|ve trang truoc)\b|←|‹|❮|⟵|chevron-left|arrow-left/;
+    const nextRe = /\b(next|forward|after|right|tiep|sau|trang sau|tiep theo|trang tiep)\b|→|›|❯|⟶|chevron-right|arrow-right/;
+    const re = direction === 'prev' ? prevRe : nextRe;
+    return buttons.find((button) => re.test(buttonLabel(button))) || null;
+  }
+  function findSwipeSurface(start) {
+    // The yearbook already has its own native swipe handler in app.js; do not double-trigger it.
+    if (start?.closest?.('.yearbook-spread, [data-a5-native-swipe]')) return null;
+    let current = start;
+    for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {
+      if (current === document.body || current === document.documentElement || current.classList?.contains('app-shell')) break;
+      const buttons = Array.from(current.querySelectorAll('button, a[role="button"], [role="button"]')).filter((button) => {
+        const style = getComputedStyle(button);
+        return style.display !== 'none' && style.visibility !== 'hidden' && !button.disabled && button.getAttribute('aria-disabled') !== 'true';
+      });
+      const prev = findDirection(buttons, 'prev');
+      const next = findDirection(buttons, 'next');
+      if (prev && next) {
+        current.classList.add('a5-motion-swipe-surface');
+        return { surface: current, prev, next };
+      }
+    }
+    return null;
+  }
+
+  function onPointerDown(event) {
+    if (event.isPrimary === false || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    const target = asElement(event.target);
+    if (!target) return;
+
+    const pressEl = target.closest(PRESS_SELECTOR);
+    if (pressEl && !pressEl.matches(':disabled, [aria-disabled="true"]')) {
+      setPressable(pressEl);
+      pressEl.classList.remove('a5-motion-pop');
+      pressEl.classList.add('a5-motion-pressed');
+    }
+
+    let swipeInfo = null;
+    if (event.pointerType !== 'mouse' && !isBlockedSwipeTarget(target)) swipeInfo = findSwipeSurface(target);
+    activePointers.set(event.pointerId, {
+      startX: event.clientX,
+      startY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      moved: false,
+      pressEl: pressEl || null,
+      swipeSurface: swipeInfo?.surface || null,
+      swipePrev: swipeInfo?.prev || null,
+      swipeNext: swipeInfo?.next || null
+    });
+  }
+
+  function onPointerMove(event) {
+    const entry = activePointers.get(event.pointerId);
+    if (!entry) return;
+    entry.lastX = event.clientX;
+    entry.lastY = event.clientY;
+    const dx = event.clientX - entry.startX;
+    const dy = event.clientY - entry.startY;
+    if (Math.abs(dx) > 11 || Math.abs(dy) > 11) {
+      entry.moved = true;
+      entry.pressEl?.classList.remove('a5-motion-pressed');
+    }
+    if (entry.swipeSurface && Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+      entry.swipeSurface.classList.add('a5-motion-swiping');
+    }
+  }
+
+  function onPointerUp(event, allowSwipe = true) {
+    const entry = activePointers.get(event.pointerId);
+    if (!entry) return;
+    const dx = event.clientX - entry.startX;
+    const dy = event.clientY - entry.startY;
+    const isHorizontalSwipe = allowSwipe && entry.swipeSurface && Math.abs(dx) >= 58 && Math.abs(dy) < 76 && Math.abs(dx) > Math.abs(dy) * 1.2;
+    const directionButton = isHorizontalSwipe ? (dx < 0 ? entry.swipeNext : entry.swipePrev) : null;
+    clearPress(event.pointerId, { pop: !entry.moved && !isHorizontalSwipe });
+
+    if (directionButton && !directionButton.disabled && directionButton.getAttribute('aria-disabled') !== 'true') {
+      // Trigger the existing page control so app state remains owned by the site.
+      directionButton.click();
+      lastSwipe.surface = entry.swipeSurface;
+      lastSwipe.at = performance.now();
+    }
+  }
+
+  function onClickCapture(event) {
+    // Some browsers still send a click after a completed swipe. Ignore only that accidental click.
+    const target = asElement(event.target);
+    if (event.isTrusted && lastSwipe.surface && performance.now() - lastSwipe.at < 420 && target && lastSwipe.surface.contains(target)) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      lastSwipe.surface = null;
+    }
+  }
+
+  function isVisible(el) {
+    if (!el?.isConnected) return false;
+    const style = getComputedStyle(el);
+    return style.display !== 'none' && style.visibility !== 'hidden' && el.getClientRects().length > 0;
+  }
+  function enterMotion(el) {
+    if (!el || reducedMotion()) return;
+    const isBackdrop = el.matches(BACKDROPS);
+    const cls = isBackdrop ? 'a5-motion-backdrop-enter' : 'a5-motion-surface-enter';
+    el.classList.remove(cls);
+    void el.offsetWidth;
+    el.classList.add(cls);
+    const remove = () => el.classList.remove(cls);
+    el.addEventListener('animationend', remove, { once: true });
+    window.setTimeout(remove, 650);
+  }
+  function processMotionTarget(el) {
+    if (!el.matches?.(MOTION_TARGETS)) return;
+    const visibleNow = isVisible(el);
+    const wasVisible = seenModalVisibility.get(el) === true;
+    seenModalVisibility.set(el, visibleNow);
+    if (visibleNow && !wasVisible) enterMotion(el);
+  }
+  function scanAddedNode(node) {
+    const el = asElement(node);
+    if (!el) return;
+    if (el.matches(MOTION_TARGETS)) processMotionTarget(el);
+    el.querySelectorAll?.(MOTION_TARGETS).forEach(processMotionTarget);
+  }
+
+  let swipePreparationQueued = false;
+  function prepareSwipeSurfaces(root = document) {
+    const buttonSelector = 'button, a[role="button"], [role="button"]';
+    const buttons = Array.from(root.querySelectorAll?.(buttonSelector) || []);
+    const previousButtons = buttons.filter((button) => /\b(prev|previous|back|before|left|trai|truoc|quay lai|trang truoc|ve trang truoc)\b|←|‹|❮|⟵|chevron-left|arrow-left/.test(buttonLabel(button)));
+    for (const previous of previousButtons) {
+      let parent = previous.parentElement;
+      for (let depth = 0; parent && depth < 8; depth += 1, parent = parent.parentElement) {
+        if (parent === document.body || parent === document.documentElement || parent.classList?.contains('app-shell')) break;
+        // Do not tag ancestors of the yearbook: its original page-turn gesture already works.
+        if (parent.querySelector('.yearbook-spread, [data-a5-native-swipe]')) continue;
+        const controls = Array.from(parent.querySelectorAll(buttonSelector)).filter((button) => {
+          const style = getComputedStyle(button);
+          return style.display !== 'none' && style.visibility !== 'hidden' && !button.disabled && button.getAttribute('aria-disabled') !== 'true';
+        });
+        if (!findDirection(controls, 'prev') || !findDirection(controls, 'next')) continue;
+        const hasPageContent = !!parent.querySelector('.viewer-media-content, img, video, [data-page], [data-slide], [data-spread], [class*="yearbook"], [class*="book-page"], [class*="album-page"]');
+        if (hasPageContent) {
+          parent.classList.add('a5-motion-swipe-surface');
+          break;
+        }
+      }
+    }
+  }
+  function scheduleSwipePreparation() {
+    if (swipePreparationQueued) return;
+    swipePreparationQueued = true;
+    window.requestAnimationFrame(() => {
+      swipePreparationQueued = false;
+      prepareSwipeSurfaces(document);
+    });
+  }
+
+  function animatePageContent() {
+    if (reducedMotion()) return;
+    const host = document.querySelector('.page-content');
+    if (!host) return;
+    const candidates = Array.from(host.children).filter((el) => {
+      const style = getComputedStyle(el);
+      return style.display !== 'none' && style.visibility !== 'hidden';
+    }).slice(0, 4);
+    candidates.forEach((el, index) => {
+      el.classList.remove('a5-motion-page-enter');
+      void el.offsetWidth;
+      el.style.setProperty('--a5-motion-delay', `${Math.min(index * 32, 96)}ms`);
+      el.classList.add('a5-motion-page-enter');
+      el.style.animationDelay = el.style.getPropertyValue('--a5-motion-delay');
+    });
+    window.setTimeout(() => candidates.forEach((el) => {
+      el.classList.remove('a5-motion-page-enter');
+      el.style.removeProperty('--a5-motion-delay');
+      el.style.removeProperty('animation-delay');
+    }), 650);
+  }
+
+  document.addEventListener('pointerdown', onPointerDown, { passive: true, capture: true });
+  document.addEventListener('pointermove', onPointerMove, { passive: true, capture: true });
+  document.addEventListener('pointerup', (event) => onPointerUp(event, true), { passive: true, capture: true });
+  document.addEventListener('pointercancel', (event) => clearPress(event.pointerId), { passive: true, capture: true });
+  document.addEventListener('click', onClickCapture, true);
+  window.addEventListener('blur', () => Array.from(activePointers.keys()).forEach((id) => clearPress(id)));
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) Array.from(activePointers.keys()).forEach((id) => clearPress(id));
+  });
+
+  document.addEventListener('click', (event) => {
+    const target = asElement(event.target);
+    if (!target?.closest('.nav-item, .mobile-nav-item')) return;
+    // Wait for the site's own tab handler to replace the page content, then animate it.
+    window.requestAnimationFrame(() => window.requestAnimationFrame(animatePageContent));
+  });
+
+  const observer = new MutationObserver((mutations) => {
+    let childListChanged = false;
+    for (const mutation of mutations) {
+      if (mutation.type === 'childList') {
+        childListChanged = true;
+        mutation.addedNodes.forEach(scanAddedNode);
+      } else if (mutation.type === 'attributes') {
+        const target = asElement(mutation.target);
+        if (target?.matches(MOTION_TARGETS)) processMotionTarget(target);
+      }
+    }
+    if (childListChanged) scheduleSwipePreparation();
+  });
+  observer.observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['class', 'style', 'hidden', 'open']
+  });
+  document.querySelectorAll(MOTION_TARGETS).forEach(processMotionTarget);
+  prepareSwipeSurfaces(document);
+})();
+
