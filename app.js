@@ -79,6 +79,13 @@
   let a5WishRealtimeTimer = null;
   let a5WishSelectedId = null;
   let homeFilter = 'all';
+  let homeMemoryDeckItems = [];
+  let homeMemoryDeckIndex = 0;
+  let homeMemoryDeckCount = 0;
+  let homeMemoryDeckGesture = null;
+  let homeMemoryDeckGestureFrame = 0;
+  let homeMemoryDeckPendingX = 0;
+  let homeMemoryDeckSuppressClickUntil = 0;
   let galleryFilter = 'all';
   let searchTerm = '';
   let currentUploadType = 'photo';
@@ -1217,20 +1224,6 @@
     renderMusicTrackList();
   }
 
-  const bindHomeRailControlState = () => {
-    const rail = $('#homeMediaGrid');
-    if (!rail || rail.dataset.a5RailScrollBound === 'true') return;
-    rail.dataset.a5RailScrollBound = 'true';
-    rail.addEventListener('scroll', () => {
-      if (rail._a5HomeRailControlFrame) return;
-      rail._a5HomeRailControlFrame = window.requestAnimationFrame(() => {
-        rail._a5HomeRailControlFrame = 0;
-        updateHomeRailControls();
-      });
-    }, { passive: true });
-    window.addEventListener('resize', updateHomeRailControls, { passive: true });
-  };
-
   async function initialize() {
     window.setTimeout(() => $('#splash')?.classList.add('done'), 700);
     registerA5ServiceWorker();
@@ -2195,8 +2188,8 @@
     container.dataset.a5GridHasRendered = 'true';
   }
 
-  // Home-only compact memory strip. It reuses the existing full-screen viewer and
-  // keeps keyed DOM nodes stable so realtime updates do not restart every card.
+  // Home-only, performance-friendly memory deck. Only four visible cards are in the DOM
+  // at once; the existing full-screen media viewer remains the single viewer of record.
   function renderHomeMemoryRailCard(item, index = 0) {
     const owner = profiles.find(profile => profile.id === item.user_id) || item.profiles || {};
     const isVideo = item.media_type === 'video';
@@ -2211,7 +2204,7 @@
       : `<div class="a5-home-memory-fallback" aria-hidden="true">${isVideo ? '▷' : '✿'}<small>Đang chuẩn bị kỷ niệm…</small></div>`;
     const signature = JSON.stringify([item.id, item.url || '', item.media_type, item.caption || '', item.album_name || '', item.created_at, item.user_id, displayName(owner), owner.avatar_url || '']);
     const template = document.createElement('template');
-    template.innerHTML = `<article class="a5-home-memory-card" role="listitem" data-media-card="${escapeAttr(item.id)}" data-home-memory-id="${escapeAttr(item.id)}" data-home-memory-signature="${escapeAttr(signature)}" style="--a5-home-rail-index:${Math.min(index, 8)}">
+    template.innerHTML = `<article class="a5-home-memory-card" role="listitem" data-media-card="${escapeAttr(item.id)}" data-home-memory-id="${escapeAttr(item.id)}" data-home-memory-signature="${escapeAttr(signature)}" data-home-deck-pos="${index}" style="--a5-home-rail-index:${Math.min(index, 3)};--a5-home-deck-pos:${index}">
       <button type="button" class="a5-home-memory-trigger" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở đầy đủ ${isVideo ? 'video' : 'ảnh'}: ${escapeAttr(title)}" ${item.url ? '' : 'disabled'}>
         <span class="a5-home-memory-cover ${isVideo ? 'is-video' : 'is-photo'}">${mediaVisual}<span class="a5-home-memory-kind">${isVideo ? '▶ VIDEO' : '▧ ẢNH'}</span><span class="a5-home-memory-expand" aria-hidden="true">⤢</span></span>
         <span class="a5-home-memory-copy"><span class="a5-home-memory-album">${escapeHTML(item.album_name || 'NHẬT KÝ A5')}</span><strong>${escapeHTML(title)}</strong><span class="a5-home-memory-meta"><span class="a5-home-memory-owner">${escapeHTML(displayName(owner))}</span><time datetime="${escapeAttr(isoValue)}">${escapeHTML(date)}</time></span><span class="a5-home-memory-open-hint">Chạm để xem trọn khoảnh khắc <i aria-hidden="true">↗</i></span></span>
@@ -2222,10 +2215,14 @@
 
   function renderHomeMemoryRail(container, items) {
     if (!container) return;
+    homeMemoryDeckItems = Array.isArray(items) ? items : [];
+    homeMemoryDeckCount = homeMemoryDeckItems.length;
+    homeMemoryDeckIndex = Math.max(0, Math.min(homeMemoryDeckIndex, Math.max(0, homeMemoryDeckCount - 1)));
+    const deckItems = homeMemoryDeckItems.slice(homeMemoryDeckIndex, homeMemoryDeckIndex + Math.min(4, homeMemoryDeckCount));
     const wasRendered = container.dataset.a5HomeRailRendered === 'true';
     const oldNodes = [...container.querySelectorAll(':scope > .a5-home-memory-card[data-home-memory-id]')];
     const oldById = new Map(oldNodes.map(node => [String(node.dataset.homeMemoryId), node]));
-    const nextNodes = (items || []).map((item, index) => {
+    const nextNodes = deckItems.map((item, index) => {
       const id = String(item.id);
       const signature = JSON.stringify([item.id, item.url || '', item.media_type, item.caption || '', item.album_name || '', item.created_at, item.user_id, displayName(profiles.find(profile => profile.id === item.user_id) || item.profiles || {}), (profiles.find(profile => profile.id === item.user_id) || item.profiles || {}).avatar_url || '']);
       let node = oldById.get(id);
@@ -2234,13 +2231,15 @@
         if (node.dataset.homeMemorySignature !== signature) {
           node = renderHomeMemoryRailCard(item, index);
           node.classList.add('a5-home-memory-card-updated');
-        } else {
-          node.style.setProperty('--a5-home-rail-index', String(Math.min(index, 8)));
         }
       } else {
         node = renderHomeMemoryRailCard(item, index);
         if (wasRendered) node.classList.add('a5-home-memory-card-new');
       }
+      node.dataset.homeDeckPos = String(index);
+      node.style.setProperty('--a5-home-deck-pos', String(index));
+      node.style.setProperty('--a5-home-rail-index', String(index));
+      if (index > 0) node.classList.remove('is-dragging', 'is-throwing-left', 'is-throwing-right');
       return node;
     });
     nextNodes.forEach((node, index) => {
@@ -2249,22 +2248,96 @@
     });
     const keep = new Set(nextNodes);
     [...container.children].forEach(node => { if (!keep.has(node)) node.remove(); });
+    const front = container.querySelector('.a5-home-memory-card[data-home-deck-pos="0"]');
+    front?.style.removeProperty('--a5-home-drag-x');
     container.dataset.a5HomeRailRendered = 'true';
     container.classList.toggle('is-empty', nextNodes.length === 0);
+    container.classList.toggle('has-deck', nextNodes.length > 0);
     updateHomeRailControls();
   }
 
   function updateHomeRailControls() {
-    const rail = $('#homeMediaGrid');
     const controls = $$('.a5-home-rail-controls button');
-    if (!rail || !controls.length) return;
-    const maxScroll = Math.max(0, rail.scrollWidth - rail.clientWidth);
+    if (!controls.length) return;
     controls.forEach(button => {
       const direction = Number(button.dataset.direction || 0);
-      button.disabled = maxScroll < 4 || (direction < 0 ? rail.scrollLeft <= 2 : rail.scrollLeft >= maxScroll - 2);
+      button.disabled = homeMemoryDeckCount < 2 || (direction < 0 ? homeMemoryDeckIndex <= 0 : homeMemoryDeckIndex >= homeMemoryDeckCount - 1);
     });
   }
 
+  function stepHomeMemoryDeck(direction) {
+    if (homeMemoryDeckCount < 2) return;
+    const nextIndex = Math.max(0, Math.min(homeMemoryDeckCount - 1, homeMemoryDeckIndex + Math.sign(direction || 1)));
+    if (nextIndex === homeMemoryDeckIndex) return;
+    homeMemoryDeckIndex = nextIndex;
+    renderHomeMemoryRail($('#homeMediaGrid'), homeMemoryDeckItems);
+  }
+
+  function bindHomeRailControlState() {
+    const rail = $('#homeMediaGrid');
+    if (!rail || rail.dataset.a5RailScrollBound === 'true') return;
+    rail.dataset.a5RailScrollBound = 'true';
+
+    // A tap opens the photo/video; a horizontal swipe advances the deck instead.
+    rail.addEventListener('click', event => {
+      if (performance.now() < homeMemoryDeckSuppressClickUntil) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
+
+    rail.addEventListener('pointerdown', event => {
+      if (event.pointerType === 'mouse' || (event.button !== undefined && event.button !== 0)) return;
+      if (!event.target.closest('.a5-home-memory-card')) return;
+      homeMemoryDeckGesture = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, dx: 0, dy: 0, moved: false };
+    }, { passive: true });
+
+    rail.addEventListener('pointermove', event => {
+      const gesture = homeMemoryDeckGesture;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      gesture.dx = event.clientX - gesture.x;
+      gesture.dy = event.clientY - gesture.y;
+      if (Math.abs(gesture.dx) < 8 || Math.abs(gesture.dx) < Math.abs(gesture.dy) * 1.15) return;
+      gesture.moved = true;
+      homeMemoryDeckPendingX = Math.max(-92, Math.min(92, gesture.dx));
+      if (homeMemoryDeckGestureFrame) return;
+      homeMemoryDeckGestureFrame = window.requestAnimationFrame(() => {
+        homeMemoryDeckGestureFrame = 0;
+        const front = rail.querySelector('.a5-home-memory-card[data-home-deck-pos="0"]');
+        if (front) {
+          front.classList.add('is-dragging');
+          front.style.setProperty('--a5-home-drag-x', `${homeMemoryDeckPendingX}px`);
+        }
+      });
+    }, { passive: true });
+
+    const finishDeckGesture = event => {
+      const gesture = homeMemoryDeckGesture;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      homeMemoryDeckGesture = null;
+      if (homeMemoryDeckGestureFrame) {
+        window.cancelAnimationFrame(homeMemoryDeckGestureFrame);
+        homeMemoryDeckGestureFrame = 0;
+      }
+      const front = rail.querySelector('.a5-home-memory-card[data-home-deck-pos="0"]');
+      if (gesture.moved && Math.abs(gesture.dx) >= 48 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.15) {
+        homeMemoryDeckSuppressClickUntil = performance.now() + 550;
+        front?.classList.remove('is-dragging');
+        front?.classList.add(gesture.dx < 0 ? 'is-throwing-left' : 'is-throwing-right');
+        window.setTimeout(() => {
+          stepHomeMemoryDeck(gesture.dx < 0 ? 1 : -1);
+        }, 165);
+      } else {
+        if (front) {
+          front.classList.remove('is-dragging');
+          front.style.removeProperty('--a5-home-drag-x');
+        }
+      }
+    };
+    rail.addEventListener('pointerup', finishDeckGesture, { passive: true });
+    rail.addEventListener('pointercancel', finishDeckGesture, { passive: true });
+    window.addEventListener('resize', updateHomeRailControls, { passive: true });
+  }
   function renderHomeMedia() {
     let items = mediaItems.filter(searchable);
     if (homeFilter !== 'all') items = items.filter(item => item.media_type === homeFilter);
@@ -4573,9 +4646,9 @@
     $('#a5ChatComposerInput')?.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); $('#a5ChatComposerForm')?.requestSubmit(); } });
     $('#commentForm')?.addEventListener('submit', submitComment);
     $('#cancelCommentEdit')?.addEventListener('click', () => { editingCommentId = null; $('#editingCommentId').value = ''; $('#commentInput').value = ''; $('#commentSubmitButton').textContent = 'Gửi bình luận ♡'; $('#cancelCommentEdit').classList.add('hidden'); });
-    $('#homeMonthFilter')?.addEventListener('change', event => { homeMonthFilter = event.target.value || 'all'; renderHomeMedia(); });
+    $('#homeMonthFilter')?.addEventListener('change', event => { homeMonthFilter = event.target.value || 'all'; homeMemoryDeckIndex = 0; renderHomeMedia(); });
     $('#galleryMonthFilter')?.addEventListener('change', event => { galleryMonthFilter = event.target.value || 'all'; renderGallery(); });
-    $('#homeAlbumFilter')?.addEventListener('change', event => { homeAlbumFilter = event.target.value || 'all'; renderHomeMedia(); });
+    $('#homeAlbumFilter')?.addEventListener('change', event => { homeAlbumFilter = event.target.value || 'all'; homeMemoryDeckIndex = 0; renderHomeMedia(); });
     $('#galleryAlbumFilter')?.addEventListener('change', event => { galleryAlbumFilter = event.target.value || 'all'; renderGallery(); });
     $('#editMediaForm')?.addEventListener('submit', saveMediaEdit);
     $('#confirmDeleteButton')?.addEventListener('click', confirmDeleteMedia);
@@ -4599,7 +4672,7 @@
     });
     $('#globalSearch')?.addEventListener('input', event => {
       searchTerm = event.target.value.trim().toLocaleLowerCase('vi');
-      if (activeTab === 'home') renderHomeMedia();
+      if (activeTab === 'home') { homeMemoryDeckIndex = 0; renderHomeMedia(); }
       if (activeTab === 'gallery') renderGallery();
       if (activeTab === 'people') renderPeople();
     });
@@ -4618,7 +4691,7 @@
       const tab = event.target.closest('[data-tab]');
       if (tab) { event.preventDefault(); switchTab(tab.dataset.tab); return; }
       const homeFilterButton = event.target.closest('[data-home-filter]');
-      if (homeFilterButton) { homeFilter = homeFilterButton.dataset.homeFilter; renderHomeMedia(); return; }
+      if (homeFilterButton) { homeFilter = homeFilterButton.dataset.homeFilter; homeMemoryDeckIndex = 0; renderHomeMedia(); return; }
       const galleryFilterButton = event.target.closest('[data-gallery-filter]');
       if (galleryFilterButton) { galleryFilter = galleryFilterButton.dataset.galleryFilter; renderGallery(); return; }
       const typeButton = event.target.closest('[data-upload-type]');
@@ -4627,13 +4700,8 @@
       if (!actionButton) return;
       const action = actionButton.dataset.action;
       if (action === 'home-rail-scroll') {
-        const rail = $('#homeMediaGrid');
         const direction = Number(actionButton.dataset.direction || 1);
-        if (rail) {
-          const reduced = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
-          rail.scrollBy({ left: direction * Math.max(rail.clientWidth * 0.82, 240), behavior: reduced ? 'auto' : 'smooth' });
-          window.setTimeout(updateHomeRailControls, reduced ? 0 : 280);
-        }
+        stepHomeMemoryDeck(direction);
       }
       else if (action === 'chat-toggle-new') toggleA5ChatNewDirect();
       else if (action === 'chat-open-conversation') await openA5ChatConversation(actionButton.dataset.conversationId);
