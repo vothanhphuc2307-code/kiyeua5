@@ -1,0 +1,313 @@
+/* A5 Loading Experience v1.0 — premium keepsake loader, no external libraries */
+:root {
+  --a5-load-rose: #d77891;
+  --a5-load-rose-deep: #ad4f70;
+  --a5-load-paper: rgba(255, 250, 248, .94);
+  --a5-load-ink: #655263;
+  --a5-load-line: rgba(202, 126, 151, .24);
+}
+
+/* Enrich the existing splash instead of replacing its familiar A5 identity. */
+#splash {
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255, 226, 235, .72), transparent 32%),
+    radial-gradient(circle at 18% 78%, rgba(238, 229, 255, .48), transparent 34%),
+    #fff8f5;
+}
+#splash::before,
+#splash::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  border-radius: 50%;
+  opacity: .58;
+}
+#splash::before {
+  width: min(80vw, 430px);
+  aspect-ratio: 1;
+  border: 1px solid rgba(222, 158, 177, .18);
+  box-shadow: 0 0 0 22px rgba(255,255,255,.12), 0 0 0 54px rgba(232,202,220,.09);
+  animation: a5SplashHalo 5.5s ease-in-out infinite;
+}
+#splash::after {
+  inset: 0;
+  background-image:
+    radial-gradient(circle, rgba(213,133,158,.46) 1px, transparent 1.8px),
+    radial-gradient(circle, rgba(181,157,216,.34) 1px, transparent 1.8px);
+  background-size: 63px 63px, 91px 91px;
+  background-position: 12px 18px, 32px 43px;
+  mask-image: linear-gradient(transparent, black 22%, black 78%, transparent);
+  opacity: .34;
+  animation: a5DustDrift 16s linear infinite;
+}
+#splash .splash-paper {
+  width: min(330px, calc(100vw - 44px));
+  padding: 25px 24px 24px;
+  border: 1px solid rgba(255, 255, 255, .82);
+  border-radius: 30px;
+  background: linear-gradient(145deg, rgba(255,255,255,.73), rgba(255,249,248,.47));
+  box-shadow: 0 25px 75px rgba(143, 91, 119, .12), inset 0 1px 0 rgba(255,255,255,.88);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  transform-origin: center;
+  animation: a5SplashCardIn .9s cubic-bezier(.2,.8,.2,1) both, a5SplashBreathe 3.2s ease-in-out 1s infinite;
+}
+#splash .splash-flower {
+  position: relative;
+  z-index: 1;
+  font-size: 34px;
+  line-height: 1.1;
+  text-shadow: 0 5px 18px rgba(210, 122, 151, .2);
+  transform-origin: 50% 55%;
+  animation: a5FlowerBloom .7s cubic-bezier(.16,1.35,.5,1) both, a5FlowerTurn 7s linear .7s infinite;
+}
+#splash .splash-title {
+  position: relative;
+  margin-top: 5px;
+  font-size: clamp(70px, 18vw, 84px);
+  letter-spacing: -6px;
+  line-height: 1.04;
+  color: transparent;
+  background: linear-gradient(115deg, #b65375 8%, #e09bad 34%, #b75476 48%, #9f4568 74%, #d78da4 91%);
+  background-size: 230% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 8px 10px rgba(185, 91, 124, .13));
+  animation: a5LogoSheen 3.3s ease-in-out .2s infinite;
+}
+#splash .splash-line {
+  position: relative;
+  overflow: hidden;
+  width: 100px;
+  height: 3px;
+  background: rgba(224, 165, 184, .29);
+}
+#splash .splash-line::after {
+  content: "";
+  display: block;
+  width: 38%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #d9829e, #f2c6d3, #d9829e);
+  animation: a5LineTravel 1.45s cubic-bezier(.65,0,.35,1) infinite;
+}
+#splash .splash-paper p {
+  margin: 0 0 13px;
+  font-size: 10px;
+  letter-spacing: 1.45px;
+  color: #a17b90;
+}
+#splash .splash-dots { gap: 8px; }
+#splash .splash-dots i {
+  width: 6px;
+  height: 6px;
+  box-shadow: 0 2px 6px rgba(203, 112, 147, .16);
+}
+#splash .splash-dots i:nth-child(1) { background: #d87e9b; }
+#splash .splash-dots i:nth-child(2) { background: #c3a3e2; }
+#splash .splash-dots i:nth-child(3) { background: #efbd9c; }
+.a5-splash-spark {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  color: #d99caf;
+  font-size: 17px;
+  line-height: 1;
+  text-shadow: 0 4px 12px rgba(202, 126, 151, .2);
+  animation: a5SparkOrbit 3.6s ease-in-out infinite;
+}
+.a5-splash-spark[data-a5-spark="1"] { top: 27px; left: 26px; --a5-spark-x: -6px; --a5-spark-y: -9px; }
+.a5-splash-spark[data-a5-spark="2"] { top: 60px; right: 26px; color: #bba5df; --a5-spark-x: 8px; --a5-spark-y: -7px; animation-delay: -.9s; }
+.a5-splash-spark[data-a5-spark="3"] { bottom: 48px; left: 25px; color: #e9b7a4; --a5-spark-x: -8px; --a5-spark-y: 7px; animation-delay: -1.8s; }
+.a5-splash-spark[data-a5-spark="4"] { bottom: 37px; right: 28px; --a5-spark-x: 8px; --a5-spark-y: 8px; animation-delay: -2.5s; }
+
+/* Generic full-screen busy state: appears only when a meaningful task stays busy. */
+#a5LoadingExperience {
+  position: fixed;
+  inset: 0;
+  z-index: 1900;
+  display: grid;
+  place-items: center;
+  padding: max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom));
+  background: rgba(255, 248, 247, .76);
+  -webkit-backdrop-filter: blur(9px) saturate(1.08);
+  backdrop-filter: blur(9px) saturate(1.08);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .28s ease, visibility .28s ease;
+  contain: layout paint;
+}
+#a5LoadingExperience.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+.a5-loading-card {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  width: min(310px, calc(100vw - 38px));
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 27px 24px 23px;
+  border: 1px solid rgba(255,255,255,.95);
+  border-radius: 26px;
+  background: linear-gradient(145deg, rgba(255,255,255,.97), rgba(255,247,248,.94));
+  box-shadow: 0 22px 70px rgba(132, 83, 111, .16), inset 0 1px 0 white;
+  transform: translateY(8px) scale(.97);
+  transition: transform .4s cubic-bezier(.2,.8,.2,1);
+}
+#a5LoadingExperience.is-visible .a5-loading-card { transform: translateY(0) scale(1); }
+.a5-loading-emblem {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 74px;
+  height: 74px;
+  margin-bottom: 17px;
+  border-radius: 24px 24px 24px 9px;
+  background: linear-gradient(145deg, #ffe6ec, #f4dfef 60%, #fce9dc);
+  color: #a74d6c;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.9), 0 10px 23px rgba(207, 132, 159, .16);
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -2px;
+}
+.a5-loading-emblem::before,
+.a5-loading-emblem::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border: 1px solid rgba(211, 130, 158, .35);
+  border-radius: 28px 28px 28px 13px;
+  animation: a5LoaderRing 2.2s ease-in-out infinite;
+}
+.a5-loading-emblem::after {
+  inset: -13px;
+  border-color: rgba(191, 164, 218, .25);
+  border-radius: 31px;
+  animation-delay: -.75s;
+}
+.a5-loading-flower {
+  position: absolute;
+  top: -13px;
+  right: -12px;
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: #fff4f5;
+  color: #ce7895;
+  font-family: sans-serif;
+  font-size: 17px;
+  animation: a5LoaderFlower 5s linear infinite;
+}
+.a5-loading-title {
+  margin: 0;
+  color: #795a6f;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: -.25px;
+}
+.a5-loading-caption {
+  min-height: 18px;
+  margin: 6px 0 18px;
+  color: #a58c9d;
+  font-size: 10px;
+  line-height: 1.7;
+}
+.a5-loading-track {
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #f4e6eb;
+}
+.a5-loading-track span {
+  display: block;
+  width: 38%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #d77f9b, #bda3df, #f1bdad);
+  box-shadow: 0 0 10px rgba(210, 126, 154, .24);
+  animation: a5LoadingTravel 1.45s cubic-bezier(.65,0,.35,1) infinite;
+}
+.a5-loading-dots {
+  display: flex;
+  gap: 6px;
+  margin-top: 13px;
+}
+.a5-loading-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #d59aaf;
+  animation: a5LoadingDot .8s ease-in-out infinite alternate;
+}
+.a5-loading-dots i:nth-child(2) { animation-delay: .15s; background: #c0a8de; }
+.a5-loading-dots i:nth-child(3) { animation-delay: .3s; background: #edbba7; }
+.a5-loading-screen-reader {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+}
+@keyframes a5SplashHalo { 0%,100% { transform: scale(.96) rotate(0); opacity:.34 } 50% { transform: scale(1.04) rotate(10deg); opacity:.72 } }
+@keyframes a5DustDrift { to { background-position: 75px 81px, -59px 133px; } }
+@keyframes a5SplashCardIn { from { opacity:0; transform: translateY(16px) scale(.94); filter:blur(4px) } to { opacity:1; transform:translateY(0) scale(1); filter:blur(0) } }
+@keyframes a5SplashBreathe { 0%,100% { box-shadow:0 25px 75px rgba(143,91,119,.12), inset 0 1px 0 rgba(255,255,255,.88) } 50% { box-shadow:0 28px 82px rgba(143,91,119,.17), inset 0 1px 0 white } }
+@keyframes a5FlowerBloom { from { transform:rotate(-28deg) scale(.35); opacity:0 } to { transform:rotate(0) scale(1); opacity:1 } }
+@keyframes a5FlowerTurn { to { rotate: 360deg; } }
+@keyframes a5LogoSheen { 0%,18% { background-position:100% 50% } 72%,100% { background-position:0 50% } }
+@keyframes a5LineTravel { from { transform:translateX(-110%) } to { transform:translateX(270%) } }
+@keyframes a5SparkOrbit { 0%,100% { transform:translate(0,0) scale(.8) rotate(0); opacity:.45 } 50% { transform:translate(var(--a5-spark-x,6px),var(--a5-spark-y,-7px)) scale(1.15) rotate(22deg); opacity:1 } }
+@keyframes a5LoaderRing { 0%,100% { transform:scale(.97) rotate(-5deg); opacity:.45 } 50% { transform:scale(1.035) rotate(5deg); opacity:1 } }
+@keyframes a5LoaderFlower { to { rotate:360deg } }
+@keyframes a5LoadingTravel { 0% { transform:translateX(-110%) } 100% { transform:translateX(285%) } }
+@keyframes a5LoadingDot { to { transform:translateY(-4px); opacity:.45 } }
+
+@media (max-width: 700px) {
+  #splash .splash-paper {
+    width: min(300px, calc(100vw - 42px));
+    padding: 21px 19px 22px;
+    border-radius: 25px;
+    -webkit-backdrop-filter: blur(5px);
+    backdrop-filter: blur(5px);
+  }
+  #splash::before { width: min(84vw, 330px); }
+  #splash::after { opacity: .24; }
+  #a5LoadingExperience {
+    background: rgba(255,248,247,.82);
+    -webkit-backdrop-filter: blur(4px) saturate(1.04);
+    backdrop-filter: blur(4px) saturate(1.04);
+  }
+  .a5-loading-card { padding: 24px 21px 21px; border-radius: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #splash::before,
+  #splash::after,
+  #splash .splash-paper,
+  #splash .splash-flower,
+  #splash .splash-title,
+  #splash .splash-line::after,
+  .a5-splash-spark,
+  .a5-loading-emblem::before,
+  .a5-loading-emblem::after,
+  .a5-loading-flower,
+  .a5-loading-track span,
+  .a5-loading-dots i {
+    animation: none !important;
+  }
+  #a5LoadingExperience,
+  .a5-loading-card { transition: none !important; }
+}
