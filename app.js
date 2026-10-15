@@ -4770,6 +4770,10 @@ img.a5-motion-image-arrive { animation: a5-motion-image-in 300ms ease-out both; 
     '#a5ChatConversationCount'
   ].join(',');
   const activePointers = new Map();
+  // Coalesce high-frequency pointermove events to one visual update per frame.
+  // This keeps touch feedback smooth without changing gesture thresholds or effects.
+  const pendingPointerMoves = new Map();
+  let pointerMoveFrame = 0;
   const lastGesture = { target: null, at: 0 };
   const visibilityState = new WeakMap();
   const pageActiveState = new WeakMap();
@@ -4811,6 +4815,7 @@ img.a5-motion-image-arrive { animation: a5-motion-image-in 300ms ease-out both; 
     window.setTimeout(() => ripple.remove(), 680);
   }
   function clearPress(pointerId, pop = false) {
+    pendingPointerMoves.delete(pointerId);
     const entry = activePointers.get(pointerId);
     if (!entry) return;
     activePointers.delete(pointerId);
@@ -4890,12 +4895,12 @@ img.a5-motion-image-arrive { animation: a5-motion-image-in 300ms ease-out both; 
       swipePrev: swipeInfo?.prev || null, swipeNext: swipeInfo?.next || null
     });
   }
-  function onPointerMove(event) {
-    const entry = activePointers.get(event.pointerId);
+  function applyPointerMove(pointerId, clientX, clientY) {
+    const entry = activePointers.get(pointerId);
     if (!entry) return;
-    entry.lastX = event.clientX; entry.lastY = event.clientY;
-    const dx = event.clientX - entry.startX;
-    const dy = event.clientY - entry.startY;
+    entry.lastX = clientX; entry.lastY = clientY;
+    const dx = clientX - entry.startX;
+    const dy = clientY - entry.startY;
     if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
       entry.moved = true;
       entry.pressEl?.classList.remove('a5-motion-pressed');
@@ -4910,6 +4915,17 @@ img.a5-motion-image-arrive { animation: a5-motion-image-in 300ms ease-out both; 
       entry.swipeSurface.style.setProperty('--a5-motion-swipe-x', `${Math.max(-22, Math.min(22, dx * .22))}px`);
     }
   }
+  function flushPendingPointerMoves() {
+    pointerMoveFrame = 0;
+    const moves = [...pendingPointerMoves.entries()];
+    pendingPointerMoves.clear();
+    for (const [pointerId, point] of moves) applyPointerMove(pointerId, point.x, point.y);
+  }
+  function onPointerMove(event) {
+    if (!activePointers.has(event.pointerId)) return;
+    pendingPointerMoves.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (!pointerMoveFrame) pointerMoveFrame = window.requestAnimationFrame(flushPendingPointerMoves);
+  }
   function settleViewerCard(card) {
     if (!card) return;
     card.classList.remove('a5-motion-sheet-dragging');
@@ -4923,6 +4939,8 @@ img.a5-motion-image-arrive { animation: a5-motion-image-in 300ms ease-out both; 
   function onPointerUp(event) {
     const entry = activePointers.get(event.pointerId);
     if (!entry) return;
+    pendingPointerMoves.delete(event.pointerId);
+    applyPointerMove(event.pointerId, event.clientX, event.clientY);
     const dx = event.clientX - entry.startX;
     const dy = event.clientY - entry.startY;
     const isHorizontalSwipe = entry.swipeSurface && Math.abs(dx) >= 64 && Math.abs(dy) < 78 && Math.abs(dx) > Math.abs(dy) * 1.22;
@@ -5098,19 +5116,31 @@ img.a5-motion-image-arrive { animation: a5-motion-image-in 300ms ease-out both; 
     if (!spread || spread.dataset.a5MotionDragBound === 'true') return;
     spread.dataset.a5MotionDragBound = 'true';
     let start = null;
+    let pendingDx = null;
+    let dragFrame = 0;
+    const paintDrag = () => {
+      dragFrame = 0;
+      if (!start || pendingDx === null) return;
+      spread.classList.add('a5-motion-yearbook-dragging');
+      spread.style.setProperty('--a5-motion-yearbook-dx', `${Math.max(-18, Math.min(18, pendingDx * .12))}px`);
+      pendingDx = null;
+    };
     spread.addEventListener('touchstart', event => {
-      if (event.touches.length !== 1) { start = null; return; }
+      if (event.touches.length !== 1) { start = null; pendingDx = null; return; }
       const touch = event.touches[0]; start = { x: touch.clientX, y: touch.clientY };
+      pendingDx = null;
     }, { passive: true });
     spread.addEventListener('touchmove', event => {
       if (!start || event.touches.length !== 1) return;
       const touch = event.touches[0], dx = touch.clientX - start.x, dy = touch.clientY - start.y;
       if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2) {
-        spread.classList.add('a5-motion-yearbook-dragging');
-        spread.style.setProperty('--a5-motion-yearbook-dx', `${Math.max(-18, Math.min(18, dx * .12))}px`);
+        pendingDx = dx;
+        if (!dragFrame) dragFrame = window.requestAnimationFrame(paintDrag);
       }
     }, { passive: true });
     const release = () => {
+      if (dragFrame) { window.cancelAnimationFrame(dragFrame); dragFrame = 0; }
+      pendingDx = null;
       if (!spread.classList.contains('a5-motion-yearbook-dragging')) { start = null; return; }
       spread.classList.remove('a5-motion-yearbook-dragging');
       spread.classList.add('a5-motion-yearbook-return');
@@ -5118,7 +5148,7 @@ img.a5-motion-image-arrive { animation: a5-motion-image-in 300ms ease-out both; 
       window.setTimeout(() => {
         spread.classList.remove('a5-motion-yearbook-return');
         spread.style.removeProperty('--a5-motion-yearbook-dx');
-      }, 210);
+      }, 230);
       start = null;
     };
     spread.addEventListener('touchend', release, { passive: true });

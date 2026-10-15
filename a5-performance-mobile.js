@@ -13,6 +13,9 @@
   let queuedRoots = new Set();
   let mediaFrame = 0;
   let gesture = null;
+  let gestureFrame = 0;
+  let pendingGesturePoint = null;
+  let gestureReturnTimer = 0;
 
   function updateDeviceProfile() {
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
@@ -57,15 +60,25 @@
   }
 
   function scheduleMediaHints(nodes) {
-    for (const node of nodes) if (node instanceof Element) queuedRoots.add(node);
+    for (const node of nodes) {
+      if (!(node instanceof Element)) continue;
+      // If an ancestor is already queued, its subtree scan will cover this node.
+      let ancestor = node.parentElement;
+      let covered = false;
+      while (ancestor) {
+        if (queuedRoots.has(ancestor)) { covered = true; break; }
+        ancestor = ancestor.parentElement;
+      }
+      if (covered) continue;
+      for (const existing of [...queuedRoots]) if (node.contains(existing)) queuedRoots.delete(existing);
+      queuedRoots.add(node);
+    }
     if (mediaFrame) return;
     mediaFrame = requestAnimationFrame(() => {
       mediaFrame = 0;
       const roots = [...queuedRoots];
       queuedRoots.clear();
-      /* Skip descendants already covered by a queued ancestor. */
-      const minimal = roots.filter(node => !roots.some(other => other !== node && other.contains(node)));
-      minimal.forEach(processAddedRoot);
+      roots.forEach(processAddedRoot);
     });
   }
 
@@ -115,36 +128,107 @@
     next.click();
   }
 
+  function clearGestureVisual(state, animate = true) {
+    if (!state?.page) return;
+    state.page.classList.remove('a5-mobile-swipe-dragging');
+    if (gestureReturnTimer) window.clearTimeout(gestureReturnTimer);
+    if (animate && state.page.isConnected && state.page.classList.contains('active')) {
+      state.page.classList.add('a5-mobile-swipe-return');
+      state.page.style.setProperty('--a5-mobile-swipe-x', '0px');
+      gestureReturnTimer = window.setTimeout(() => {
+        state.page?.classList.remove('a5-mobile-swipe-return');
+        state.page?.style.removeProperty('--a5-mobile-swipe-x');
+        gestureReturnTimer = 0;
+      }, 260);
+    } else {
+      state.page.classList.remove('a5-mobile-swipe-return');
+      state.page.style.removeProperty('--a5-mobile-swipe-x');
+    }
+  }
+
+  function cancelGesture(animate = true) {
+    const state = gesture;
+    gesture = null;
+    pendingGesturePoint = null;
+    if (gestureFrame) { window.cancelAnimationFrame(gestureFrame); gestureFrame = 0; }
+    clearGestureVisual(state, animate);
+  }
+
+  function paintGestureFrame() {
+    gestureFrame = 0;
+    if (!gesture || !pendingGesturePoint) return;
+    const state = gesture;
+    const point = pendingGesturePoint;
+    pendingGesturePoint = null;
+    const dx = point.x - state.x;
+    const dy = point.y - state.y;
+    state.lastX = point.x;
+    state.lastY = point.y;
+
+    if (!state.axis) {
+      if (Math.abs(dx) > 9 && Math.abs(dx) > Math.abs(dy) * 1.18) state.axis = 'x';
+      else if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) * 1.05) {
+        cancelGesture(false); // Let native vertical scrolling continue without fighting it.
+        return;
+      } else return;
+    }
+    if (state.axis !== 'x' || Math.abs(dx) < 4) return;
+    const tabs = activeMobileTabs();
+    const currentIndex = activeTabIndex(tabs);
+    const hasDestination = dx < 0 ? currentIndex >= 0 && currentIndex < tabs.length - 1 : currentIndex > 0;
+    const resistance = hasDestination ? 0.46 : 0.17;
+    const offset = Math.max(-74, Math.min(74, dx * resistance));
+    state.page.classList.remove('a5-mobile-swipe-return');
+    state.page.classList.add('a5-mobile-swipe-dragging');
+    state.page.style.setProperty('--a5-mobile-swipe-x', `${offset.toFixed(2)}px`);
+  }
+
+  function queueGesturePoint(event) {
+    if (!gesture || event.pointerId !== gesture.id) return;
+    pendingGesturePoint = { x: event.clientX, y: event.clientY };
+    if (!gestureFrame) gestureFrame = window.requestAnimationFrame(paintGestureFrame);
+  }
+
   function handlePointerDown(event) {
-    if (!mobileQuery?.matches || event.pointerType !== 'touch' || event.isPrimary === false || event.button !== 0) return;
+    if (!mobileQuery?.matches || reduceQuery?.matches || event.pointerType !== 'touch' || event.isPrimary === false || event.button !== 0) return;
     const target = event.target instanceof Element ? event.target : null;
     if (!target || target.closest(BLOCK_SWIPE)) return;
     if (!target.closest(SWIPE_START)) return;
     const activePage = target.closest('.page-view.active');
-    if (!activePage) return;
-    gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, target, page: activePage, at: performance.now() };
+    if (!activePage || !activePage.isConnected) return;
+    cancelGesture(false);
+    gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, lastX: event.clientX, lastY: event.clientY, target, page: activePage, at: performance.now(), axis: '' };
   }
+
+  function handlePointerMove(event) { queueGesturePoint(event); }
 
   function handlePointerUp(event) {
     if (!gesture || event.pointerId !== gesture.id) return;
-    const start = gesture;
+    const state = gesture;
+    const dx = event.clientX - state.x;
+    const dy = event.clientY - state.y;
+    const elapsed = Math.max(1, performance.now() - state.at);
+    const absDx = Math.abs(dx);
+    const horizontal = absDx >= 72 || (absDx >= 38 && absDx / elapsed >= 0.42);
+    const valid = state.axis !== 'y' && horizontal && Math.abs(dy) < 78 && absDx > Math.abs(dy) * 1.22;
+    const pageStillActive = state.page?.isConnected && state.page.classList.contains('active');
     gesture = null;
-    if (!mobileQuery?.matches || !start.page.isConnected || !start.page.classList.contains('active')) return;
-    const dx = event.clientX - start.x;
-    const dy = event.clientY - start.y;
-    const elapsed = performance.now() - start.at;
-    if (Math.abs(dx) < 84 || Math.abs(dy) > 76 || Math.abs(dx) < Math.abs(dy) * 1.35 || elapsed > 950) return;
-    if (event.target instanceof Element && event.target.closest(BLOCK_SWIPE)) return;
-    goToTabOffset(dx < 0 ? 1 : -1);
+    pendingGesturePoint = null;
+    if (gestureFrame) { window.cancelAnimationFrame(gestureFrame); gestureFrame = 0; }
+    clearGestureVisual(state, !valid || !pageStillActive);
+    if (valid && pageStillActive) goToTabOffset(dx < 0 ? 1 : -1);
   }
 
   function bindSwipeNavigation() {
     if (!window.PointerEvent || !mobileQuery) return;
     document.addEventListener('pointerdown', handlePointerDown, { passive: true, capture: true });
+    document.addEventListener('pointermove', handlePointerMove, { passive: true, capture: true });
     document.addEventListener('pointerup', handlePointerUp, { passive: true, capture: true });
-    document.addEventListener('pointercancel', () => { gesture = null; }, { passive: true, capture: true });
-    mobileQuery.addEventListener?.('change', updateDeviceProfile);
-    reduceQuery?.addEventListener?.('change', () => { gesture = null; });
+    document.addEventListener('pointercancel', event => { if (gesture?.id === event.pointerId) cancelGesture(true); }, { passive: true, capture: true });
+    window.addEventListener('blur', () => cancelGesture(false), { passive: true });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) cancelGesture(false); }, { passive: true });
+    mobileQuery.addEventListener?.('change', () => { cancelGesture(false); updateDeviceProfile(); });
+    reduceQuery?.addEventListener?.('change', () => { cancelGesture(false); });
   }
 
   function boot() {

@@ -259,3 +259,46 @@ img, video, canvas, iframe { max-width: 100%; }
   }
   .mobile-nav-item:active, .mobile-add:active, .memory-card:active, .media-card:active, .person-card:active { scale: 1; }
 }
+
+
+/* A5 mobile touch smoothness patch v1.1: keep existing visual animations,
+   but let the browser keep vertical scrolling native and compositor-friendly. */
+@media (max-width: 760px) and (pointer: coarse) {
+  .home-hero, .page-title-row, .a5-chat-page-heading {
+    touch-action: pan-y pinch-zoom;
+  }
+
+  .page-view.a5-mobile-swipe-dragging {
+    translate: var(--a5-mobile-swipe-x, 0px) 0;
+    transition: none !important;
+    will-change: translate;
+  }
+  .page-view.a5-mobile-swipe-return {
+    translate: var(--a5-mobile-swipe-x, 0px) 0;
+    transition: translate 240ms cubic-bezier(.18, .88, .24, 1.12);
+  }
+
+  /* A little less blur keeps the glass look while reducing repaint cost on scroll. */
+  .topbar {
+    backdrop-filter: blur(16px) saturate(1.3);
+    -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  }
+  .mobile-nav {
+    backdrop-filter: blur(18px) saturate(1.32);
+    -webkit-backdrop-filter: blur(18px) saturate(1.32);
+  }
+  .mobile-nav-item, .mobile-add, .filter-pill, .sort-select {
+    touch-action: manipulation;
+  }
+  .media-card img, .memory-card img, .person-card img {
+    backface-visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-view.a5-mobile-swipe-dragging, .page-view.a5-mobile-swipe-return {
+    translate: none !important;
+    transition: none !important;
+    will-change: auto !important;
+  }
+}
