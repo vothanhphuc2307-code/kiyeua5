@@ -1,0 +1,59 @@
+{
+  "name": "A5 Experience Suite",
+  "version": "1.0.0",
+  "runtime_files": [
+    "a5-experience-suite.css",
+    "a5-experience-suite.js"
+  ],
+  "source_modules": {
+    "javascript": [
+      "00-runtime.js",
+      "01-auth-visibility.js",
+      "02-motion-preference.js",
+      "03-document-visibility.js",
+      "04-input-capabilities.js",
+      "05-media-hints.js",
+      "06-image-loading-state.js",
+      "07-broken-media.js",
+      "08-video-budget.js",
+      "09-home-deck-priority.js",
+      "10-dynamic-dom-observer.js",
+      "11-navigation-metrics.js",
+      "12-viewer-metrics.js",
+      "13-navigation-timing.js",
+      "14-resource-summary.js",
+      "15-long-task-observer.js",
+      "16-layout-shift-observer.js",
+      "17-network-hints.js",
+      "18-interaction-metrics.js",
+      "19-deck-diagnostics.js",
+      "20-accessibility.js",
+      "21-safe-external-links.js",
+      "22-effect-budget.js",
+      "23-pageshow-media-refresh.js",
+      "24-idle-audit.js",
+      "25-error-observer.js",
+      "26-diagnostics-panel.js"
+    ],
+    "css": [
+      "00-tokens.css",
+      "01-media-loading.css",
+      "02-broken-media.css",
+      "03-diagnostics-panel.css",
+      "04-reduced-motion.css",
+      "05-mobile-performance.css",
+      "06-low-data.css",
+      "07-accessibility.css"
+    ]
+  },
+  "assets": [
+    "empty-memory.svg",
+    "flower-stamp.svg",
+    "paper-texture.svg",
+    "sparkle.svg",
+    "video-reel.svg"
+  ],
+  "privacy": "Local-only diagnostics. The suite does not transmit telemetry. Exported report omits URLs, user IDs, chat contents, and media captions.",
+  "database_changes": false,
+  "external_runtime_dependencies": false
+}

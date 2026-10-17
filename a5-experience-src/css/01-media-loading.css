@@ -1,0 +1,4 @@
+/* Non-blocking image state; no animated shimmer loop to avoid GPU work. */
+.a5-exp-media-image{background-color:#f7edf0;background-image:linear-gradient(110deg,rgba(255,255,255,.18),rgba(255,255,255,.55),rgba(255,255,255,.18));background-size:200% 100%;transition:background-color .18s ease}
+.a5-exp-media-image.a5-exp-media-ready{background-image:none;background-color:transparent}
+.a5-exp-media-image.a5-exp-media-pending{background-position:0 0}

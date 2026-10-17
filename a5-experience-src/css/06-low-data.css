@@ -1,0 +1,3 @@
+/* Conserve effects on slow / data-saver connections; existing A5 animations are untouched. */
+html.a5-exp-low-data .a5-exp-diagnostics-panel{backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:0 8px 26px rgba(75,49,67,.18)}
+html.a5-exp-document-hidden .a5-exp-diagnostics-panel{animation-play-state:paused}

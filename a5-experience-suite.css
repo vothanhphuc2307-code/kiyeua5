@@ -1,0 +1,46 @@
+/* ===== 00-tokens.css ===== */
+/* Private design tokens for the A5 Experience toolkit. */
+:root{--a5-exp-rose:#c77893;--a5-exp-rose-dark:#a64f6d;--a5-exp-cream:#fffaf5;--a5-exp-ink:#4b3b49;--a5-exp-line:rgba(177,126,147,.2);--a5-exp-shadow:0 16px 45px rgba(86,54,74,.15);--a5-exp-motion:cubic-bezier(.2,.75,.25,1)}
+
+
+/* ===== 01-media-loading.css ===== */
+/* Non-blocking image state; no animated shimmer loop to avoid GPU work. */
+.a5-exp-media-image{background-color:#f7edf0;background-image:linear-gradient(110deg,rgba(255,255,255,.18),rgba(255,255,255,.55),rgba(255,255,255,.18));background-size:200% 100%;transition:background-color .18s ease}
+.a5-exp-media-image.a5-exp-media-ready{background-image:none;background-color:transparent}
+.a5-exp-media-image.a5-exp-media-pending{background-position:0 0}
+
+
+/* ===== 02-broken-media.css ===== */
+/* Graceful fallback styling without replacing image src or collapsing card dimensions. */
+.a5-exp-media-image.a5-exp-media-broken{opacity:.28;filter:grayscale(.25)}
+.a5-exp-has-media-error{background-color:#fbf0f2;background-image:url('./a5-experience-assets/empty-memory.svg');background-repeat:no-repeat;background-position:center;background-size:52px auto}
+.a5-exp-video-error{background-color:#f3eaff;background-image:url('./a5-experience-assets/video-reel.svg');background-repeat:no-repeat;background-position:center;background-size:58px auto}
+.a5-exp-video-error video{opacity:.28}
+
+
+/* ===== 03-diagnostics-panel.css ===== */
+/* Diagnostics UI appears only after the user explicitly opens it. */
+.a5-exp-diagnostics-panel{position:fixed;z-index:2500;right:18px;bottom:18px;width:min(370px,calc(100vw - 24px));max-height:min(76vh,620px);overflow:auto;border:1px solid rgba(255,255,255,.8);border-radius:20px;background:rgba(255,250,248,.96);color:#4b3b49;box-shadow:0 20px 70px rgba(75,49,67,.24);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);font:500 13px/1.5 'Nunito',system-ui,sans-serif;animation:a5ExpPanelIn .2s var(--a5-exp-motion) both}
+.a5-exp-diagnostics-panel[hidden]{display:none!important}.a5-exp-diagnostics-head{display:flex;align-items:center;gap:10px;padding:14px 15px;border-bottom:1px solid var(--a5-exp-line);position:relative}.a5-exp-diagnostics-head::after{content:"";position:absolute;right:54px;top:11px;width:18px;height:18px;background:url('./a5-experience-assets/sparkle.svg') center/contain no-repeat;opacity:.6;pointer-events:none}.a5-exp-diagnostics-mark{display:grid;place-items:center;width:37px;height:37px;border-radius:12px;background:#f8e3ea;color:var(--a5-exp-rose-dark);font-size:21px;background-image:url('./a5-experience-assets/flower-stamp.svg');background-position:center;background-size:26px;background-repeat:no-repeat;font-size:0}.a5-exp-diagnostics-head div{min-width:0;flex:1}.a5-exp-diagnostics-head strong,.a5-exp-diagnostics-head small{display:block}.a5-exp-diagnostics-head strong{font-size:14px}.a5-exp-diagnostics-head small{font-size:10px;color:#9d8392}.a5-exp-diagnostics-head button{border:0;border-radius:9px;width:29px;height:29px;background:#f7e9ed;color:#8f6176;font-size:21px;line-height:1}.a5-exp-diagnostics-body{padding:13px 15px;background-image:linear-gradient(rgba(255,250,248,.88),rgba(255,250,248,.88)),url('./a5-experience-assets/paper-texture.svg');background-size:auto,120px 120px}.a5-exp-stat-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.a5-exp-stat{border:1px solid rgba(214,180,193,.4);border-radius:11px;background:#fffdfc;padding:9px 10px;min-width:0}.a5-exp-stat span,.a5-exp-stat strong{display:block;overflow-wrap:anywhere}.a5-exp-stat span{font-size:10px;color:#9e8493}.a5-exp-stat strong{font-size:14px;color:#6b4f60;margin-top:3px}.a5-exp-diagnostics-hint{font-size:10px;line-height:1.55;color:#9a8793;margin:12px 0 0}.a5-exp-diagnostics-actions{display:flex;gap:8px;padding:0 15px 15px}.a5-exp-diagnostics-actions button{flex:1;border:1px solid #e8cbd6;border-radius:10px;background:#fff6f8;color:#9e536e;padding:9px 10px;font:800 11px 'Nunito',system-ui,sans-serif}.a5-exp-diagnostics-actions button:last-child{background:#c77893;color:white;border-color:#c77893}
+@keyframes a5ExpPanelIn{from{opacity:0;transform:translateY(7px) scale(.99)}to{opacity:1;transform:translateY(0) scale(1)}}
+
+
+/* ===== 04-reduced-motion.css ===== */
+@media(prefers-reduced-motion:reduce){.a5-exp-diagnostics-panel{animation:none!important;scroll-behavior:auto!important}.a5-exp-media-image{transition:none!important}}
+html[data-a5-exp-reduced-motion="true"] .a5-exp-diagnostics-panel{animation:none!important}
+
+
+/* ===== 05-mobile-performance.css ===== */
+@media(max-width:760px){.a5-exp-diagnostics-panel{right:10px;bottom:calc(10px + env(safe-area-inset-bottom,0px));width:calc(100vw - 20px);max-height:72dvh;backdrop-filter:none;-webkit-backdrop-filter:none;border-radius:17px}.a5-exp-diagnostics-head{padding:11px 12px}.a5-exp-diagnostics-body{padding:10px 12px}.a5-exp-diagnostics-actions{padding:0 12px 12px}.a5-exp-stat{padding:8px}.a5-exp-stat strong{font-size:13px}}
+
+@media(max-width:380px){.a5-exp-stat-grid{gap:6px}.a5-exp-diagnostics-hint{font-size:9px}.a5-exp-diagnostics-actions button{font-size:10px;padding:8px 6px}}
+
+
+/* ===== 06-low-data.css ===== */
+/* Conserve effects on slow / data-saver connections; existing A5 animations are untouched. */
+html.a5-exp-low-data .a5-exp-diagnostics-panel{backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:0 8px 26px rgba(75,49,67,.18)}
+html.a5-exp-document-hidden .a5-exp-diagnostics-panel{animation-play-state:paused}
+
+
+/* ===== 07-accessibility.css ===== */
+#a5-experience-diagnostics button:focus-visible{outline:3px solid #d889a4;outline-offset:3px}#a5-experience-diagnostics button:active{transform:scale(.985)}

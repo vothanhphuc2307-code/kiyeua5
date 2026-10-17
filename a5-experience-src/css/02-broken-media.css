@@ -1,0 +1,5 @@
+/* Graceful fallback styling without replacing image src or collapsing card dimensions. */
+.a5-exp-media-image.a5-exp-media-broken{opacity:.28;filter:grayscale(.25)}
+.a5-exp-has-media-error{background-color:#fbf0f2;background-image:url('./a5-experience-assets/empty-memory.svg');background-repeat:no-repeat;background-position:center;background-size:52px auto}
+.a5-exp-video-error{background-color:#f3eaff;background-image:url('./a5-experience-assets/video-reel.svg');background-repeat:no-repeat;background-position:center;background-size:58px auto}
+.a5-exp-video-error video{opacity:.28}

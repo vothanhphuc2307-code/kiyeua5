@@ -1,0 +1,2 @@
+@media(prefers-reduced-motion:reduce){.a5-exp-diagnostics-panel{animation:none!important;scroll-behavior:auto!important}.a5-exp-media-image{transition:none!important}}
+html[data-a5-exp-reduced-motion="true"] .a5-exp-diagnostics-panel{animation:none!important}

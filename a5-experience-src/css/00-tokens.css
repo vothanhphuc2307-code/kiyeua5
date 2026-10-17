@@ -1,0 +1,2 @@
+/* Private design tokens for the A5 Experience toolkit. */
+:root{--a5-exp-rose:#c77893;--a5-exp-rose-dark:#a64f6d;--a5-exp-cream:#fffaf5;--a5-exp-ink:#4b3b49;--a5-exp-line:rgba(177,126,147,.2);--a5-exp-shadow:0 16px 45px rgba(86,54,74,.15);--a5-exp-motion:cubic-bezier(.2,.75,.25,1)}
