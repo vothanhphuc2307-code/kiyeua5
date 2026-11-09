@@ -14,6 +14,7 @@ Một website lưu bút cuối cấp, thiết kế responsive cho máy tính và
 - Chú thích dưới ảnh/video, tùy chỉnh màu chữ và font.
 - Reaction mở rộng: 🩷 ❤️ 😂 😭 🥹 😍 ✨ 🫶 🔥 🤡 👍 💯; mở danh sách để xem ai đã thả từng cảm xúc, dùng nút + để chọn nhanh emoji.
 - Trình crop ảnh trước khi upload: chọn tỉ lệ 1:1, 4:3, 16:9 hoặc theo ảnh gốc; kéo ảnh để căn khung và phóng to.
+- Tự nén ảnh ngay trên thiết bị trước khi upload: chuyển ảnh tĩnh sang WebP, giới hạn cạnh dài 2.560 px (avatar 800 px), nén theo mức chất lượng thích ứng; GIF/APNG/WebP/AVIF động được giữ nguyên để không mất chuyển động.
 - Trình cắt video trước khi upload: chọn điểm bắt đầu/kết thúc; đoạn cắt được xuất thành tệp mới trong trình duyệt, còn tệp gốc được giữ nếu hủy. Do dùng MediaRecorder, việc xuất diễn ra theo thời gian thực và có thể mã hóa lại; dùng Chrome/Edge mới nhất để tương thích tốt hơn.
 - Nút **Tải ảnh/video về máy** hiện trên mọi bài đăng cho thành viên có quyền xem bài đó. Dùng URL tải xuống ký hạn của Supabase; không mở bucket công khai. Nếu trình duyệt không bắt đầu tải trực tiếp, nút sẽ mở tệp trong tab mới để người xem lưu từ trình duyệt.
 - Tìm kiếm nhanh; sắp xếp mới nhất/cũ nhất; lọc ảnh, video và bài của mình.
@@ -122,6 +123,7 @@ Sau đó vào `http://localhost:5500`. Cậu cũng có thể dùng một local s
 ## Giới hạn mặc định trong bản này
 
 - Mỗi ảnh tối đa 15 MB; mỗi video tối đa 50 MB; avatar tối đa 5 MB. Có thể đổi trong `app.js` và thiết lập Storage tương ứng, nhưng giới hạn của bucket/backend vẫn phải phù hợp.
+- Ảnh mới được tối ưu ở trình duyệt thành WebP trước khi upload để tiết kiệm Storage; ảnh đã lưu từ trước không tự được chuyển đổi. Video không được nén lại bởi bước tối ưu ảnh và vẫn là phần tiêu thụ Storage đáng kể.
 - Ứng dụng hiện tải tối đa 200 bài mới nhất trên mỗi lần tải trang để giao diện nhanh. Có thể tăng hoặc xây dựng phân trang khi album lớn hơn.
 - Media được xem bởi các thành viên đã đăng nhập trong cùng Supabase project. Ảnh/video không phải công khai cho toàn Internet, nhưng đường dẫn ký có thời hạn có thể được xem bởi bất kỳ ai mà người dùng tự gửi đường dẫn đó cho trong thời gian hiệu lực.
 - Website chưa có chức năng khôi phục tài khoản tùy chỉnh, kiểm duyệt/quản trị viên, thông báo đẩy hay nén video tự động. Các phần đó cần backend và quy tắc vận hành bổ sung.

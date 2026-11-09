@@ -3581,7 +3581,7 @@
     const isVideo = currentUploadType === 'video';
     $('#mediaFiles').accept = isVideo ? VIDEO_TYPES.join(',') : PHOTO_TYPES.join(',');
     $('#mediaFiles').multiple = true;
-    $('#fileLimits').textContent = isVideo ? 'Tối đa 50 MB mỗi video · MP4, MOV, WEBM' : 'Tối đa 15 MB mỗi ảnh · có thể chọn nhiều ảnh';
+    $('#fileLimits').textContent = isVideo ? 'Tối đa 50 MB mỗi video · MP4, MOV, WEBM' : 'Tối đa 15 MB mỗi ảnh · tự nén WebP khi lưu';
     $('#uploadModalTitle').textContent = isVideo ? 'Gửi một thước phim nhé!' : 'Cất một khoảnh khắc nhé!';
     $('#uploadModalSubtitle').textContent = isVideo ? 'Một đoạn video nhỏ cũng đủ làm cả lớp nhớ mãi.' : 'Mỗi kỷ niệm là một mảnh ghép của A5.';
     $$('.upload-type').forEach(button => button.classList.toggle('active', button.dataset.uploadType === currentUploadType));
@@ -3597,6 +3597,116 @@
       if (file.size === 0) return `Tệp “${file.name}” đang trống.`;
     }
     return '';
+  }
+
+  // Compress photos locally before they reach Supabase Storage. The Free plan
+  // has a small shared storage quota, so store right-sized WebP originals rather
+  // than relying on server-side image transformations (not available on Free).
+  const A5_IMAGE_PROFILES = {
+    memory: { maxEdge: 2560, maxPixels: 18_000_000, targetBytes: 880 * 1024, qualities: [0.82, 0.76, 0.70] },
+    avatar: { maxEdge: 800, maxPixels: 1_000_000, targetBytes: 180 * 1024, qualities: [0.82, 0.75, 0.68] }
+  };
+
+  async function a5LoadImageForCompression(file) {
+    if (typeof createImageBitmap === 'function') {
+      try {
+        const bitmap = await createImageBitmap(file);
+        return {
+          source: bitmap, width: bitmap.width, height: bitmap.height,
+          release: () => bitmap.close?.()
+        };
+      } catch (_) {
+        // Some browser decoders do not support every accepted image format.
+        // Fall back to the regular Image decoder before giving up on compression.
+      }
+    }
+    return new Promise((resolve, reject) => {
+      const objectUrl = URL.createObjectURL(file);
+      const image = new Image();
+      image.onload = () => resolve({
+        source: image, width: image.naturalWidth, height: image.naturalHeight,
+        release: () => URL.revokeObjectURL(objectUrl)
+      });
+      image.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Không đọc được ảnh để tối ưu.')); };
+      image.src = objectUrl;
+    });
+  }
+
+  function a5CanvasToBlob(canvas, quality) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Trình duyệt chưa xuất được ảnh WebP.')), 'image/webp', quality);
+    });
+  }
+
+  async function a5ImageHasAnimation(file) {
+    if (file.type === 'image/gif') return true;
+    if (!['image/png', 'image/webp', 'image/avif'].includes(file.type)) return false;
+    try {
+      const bytes = new Uint8Array(await file.slice(0, Math.min(file.size, 256 * 1024)).arrayBuffer());
+      const header = new TextDecoder('ascii').decode(bytes);
+      if (file.type === 'image/png') return header.includes('acTL'); // APNG animation control chunk
+      if (file.type === 'image/webp') return header.includes('ANIM') || header.includes('ANMF');
+      return header.includes('avis'); // animated AVIF sequence brand
+    } catch (_) {
+      // Prefer preserving a potentially animated source when its format cannot be inspected.
+      return file.type === 'image/webp' || file.type === 'image/avif';
+    }
+  }
+
+  async function a5OptimizeImageForStorage(file, purpose = 'memory') {
+    if (!(file instanceof Blob) || !String(file.type || '').startsWith('image/')) return file;
+    if (await a5ImageHasAnimation(file)) return file;
+    const profile = A5_IMAGE_PROFILES[purpose] || A5_IMAGE_PROFILES.memory;
+    let decoded;
+    let canvas;
+    try {
+      decoded = await a5LoadImageForCompression(file);
+      const width = Math.max(1, Number(decoded.width) || 1);
+      const height = Math.max(1, Number(decoded.height) || 1);
+      const scale = Math.min(1, profile.maxEdge / Math.max(width, height), Math.sqrt(profile.maxPixels / (width * height)));
+      const outputWidth = Math.max(1, Math.round(width * scale));
+      const outputHeight = Math.max(1, Math.round(height * scale));
+      canvas = document.createElement('canvas');
+      canvas.width = outputWidth;
+      canvas.height = outputHeight;
+      const context = canvas.getContext('2d', { alpha: true });
+      if (!context) return file;
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = 'high';
+      context.drawImage(decoded.source, 0, 0, outputWidth, outputHeight);
+
+      let blob = null;
+      for (const quality of profile.qualities) {
+        blob = await a5CanvasToBlob(canvas, quality);
+        if (blob.size <= profile.targetBytes) break;
+      }
+      // For unusually detailed photos, spend a little more resolution to stay
+      // compact while retaining enough detail for a class-memory gallery.
+      if (blob && blob.size > profile.targetBytes * 1.35 && Math.max(outputWidth, outputHeight) > 1400) {
+        const smallerWidth = Math.max(1, Math.round(outputWidth * 0.86));
+        const smallerHeight = Math.max(1, Math.round(outputHeight * 0.86));
+        canvas.width = smallerWidth;
+        canvas.height = smallerHeight;
+        const smallerContext = canvas.getContext('2d', { alpha: true });
+        if (smallerContext) {
+          smallerContext.imageSmoothingEnabled = true;
+          smallerContext.imageSmoothingQuality = 'high';
+          smallerContext.drawImage(decoded.source, 0, 0, smallerWidth, smallerHeight);
+          blob = await a5CanvasToBlob(canvas, profile.qualities[profile.qualities.length - 1]);
+        }
+      }
+      // If WebP is unavailable, or conversion would make the file larger, keep
+      // the source untouched rather than risking a broken or lower-value result.
+      if (!blob || blob.type !== 'image/webp' || blob.size >= file.size * 0.98) return file;
+      const stem = String(file.name || 'a5-memory').replace(/\.[^.]+$/, '') || 'a5-memory';
+      return new File([blob], `${stem}.webp`, { type: 'image/webp', lastModified: file.lastModified || Date.now() });
+    } catch (error) {
+      console.warn('A5 image optimization skipped; original file will be uploaded:', error);
+      return file;
+    } finally {
+      decoded?.release?.();
+      if (canvas) { canvas.width = 1; canvas.height = 1; }
+    }
   }
   function updateSelectedFileLabel() {
     const element = $('#selectedFiles');
@@ -4054,7 +4164,7 @@
     if (validation) return toast(validation, 'error', 5000);
     if (!currentUser || !supabase) return toast('Phiên đăng nhập đã hết. Hãy đăng nhập lại nhé.', 'error');
     isUploading = true;
-    const files = [...selectedUploadFiles];
+    let files = [...selectedUploadFiles];
     const caption = $('#uploadCaption').value.trim();
     const noteColor = safeColor($('#uploadNoteColor').value);
     const noteFont = safeFont($('#uploadNoteFont').value);
@@ -4067,6 +4177,29 @@
     const savedPaths = [];
     let complete = 0;
     try {
+      if (currentUploadType === 'photo') {
+        const originalBytes = files.reduce((sum, file) => sum + file.size, 0);
+        const optimizedFiles = [];
+        for (let index = 0; index < files.length; index++) {
+          const file = files[index];
+          progressText.textContent = `Đang nén ảnh ${index + 1}/${files.length} · ${file.name}…`;
+          bar.style.width = `${Math.max(4, Math.round((index / files.length) * 8))}%`;
+          optimizedFiles.push(await a5OptimizeImageForStorage(file, 'memory'));
+        }
+        files = optimizedFiles;
+        selectedUploadFiles = optimizedFiles;
+        updateSelectedFileLabel();
+        const optimizedBytes = files.reduce((sum, file) => sum + file.size, 0);
+        const savedBytes = Math.max(0, originalBytes - optimizedBytes);
+        if (savedBytes > 0) {
+          const percent = Math.round((savedBytes / Math.max(1, originalBytes)) * 100);
+          progressText.textContent = `Đã tối ưu ảnh · tiết kiệm ${humanBytes(savedBytes)} (${percent}%). Đang lưu kỷ niệm…`;
+        } else {
+          progressText.textContent = 'Ảnh đã gọn hoặc trình duyệt không hỗ trợ WebP · đang lưu kỷ niệm…';
+        }
+      }
+      const optimizedValidation = validateSelectedFiles(files, currentUploadType);
+      if (optimizedValidation) throw new Error(optimizedValidation);
       for (const file of files) {
         const usesTus = file.size > TUS_UPLOAD_THRESHOLD;
         const resumeKey = usesTus ? a5TusResumeKey(file) : null;
@@ -4219,14 +4352,21 @@
         try {
           if (!String(entry.archive_path).startsWith('media/') || String(entry.archive_path).includes('..')) throw new Error('Đường dẫn tệp trong ZIP không hợp lệ.');
           const blob = await fileEntry.async('blob');
-          const mime = String(entry.mime_type || blob.type || (entry.media_type === 'video' ? 'video/mp4' : 'image/jpeg'));
+          let uploadFile = blob;
+          let mime = String(entry.mime_type || blob.type || (entry.media_type === 'video' ? 'video/mp4' : 'image/jpeg'));
           const allowedTypes = entry.media_type === 'video' ? VIDEO_TYPES : PHOTO_TYPES;
           const maxBytes = entry.media_type === 'video' ? VIDEO_MAX : PHOTO_MAX;
           if (!allowedTypes.includes(mime)) throw new Error('Loại tệp không được hỗ trợ trong bản sao lưu.');
           if (blob.size <= 0 || blob.size > maxBytes) throw new Error(`Tệp vượt giới hạn ${humanBytes(maxBytes)} hoặc bị trống.`);
-          const filename = safeFileName(entry.filename || `restore-${i + 1}`);
+          let filename = safeFileName(entry.filename || `restore-${i + 1}`);
+          if (entry.media_type === 'photo') {
+            const restoreFile = new File([blob], filename, { type: mime, lastModified: Date.now() });
+            uploadFile = await a5OptimizeImageForStorage(restoreFile, 'memory');
+            mime = uploadFile.type || mime;
+            filename = safeFileName(uploadFile.name || filename);
+          }
           const path = `${currentUser.id}/restore-${Date.now()}-${uniqueId()}-${filename}`;
-          const { error: uploadError } = await supabase.storage.from(MEDIA_BUCKET).upload(path, blob, { cacheControl: '3600', upsert: false, contentType: mime });
+          const { error: uploadError } = await supabase.storage.from(MEDIA_BUCKET).upload(path, uploadFile, { cacheControl: '3600', upsert: false, contentType: mime });
           if (uploadError) throw uploadError;
           const payload = { user_id: currentUser.id, media_type: entry.media_type, storage_path: path, caption: String(entry.caption || '').slice(0, 500), note_color: safeColor(entry.note_color), note_font: safeFont(entry.note_font), album_name: String(entry.album_name || '').slice(0, 60) || null };
           if (entry.created_at && !Number.isNaN(new Date(entry.created_at).getTime())) payload.created_at = new Date(entry.created_at).toISOString();
@@ -4242,8 +4382,11 @@
           try {
             const avatarBlob = await zip.file(manifest.avatar_archive_path).async('blob');
             if (avatarBlob.size <= AVATAR_MAX) {
-              const avatarPath = `${currentUser.id}/restore-${Date.now()}-${uniqueId()}-avatar`;
-              const { error: avatarUploadError } = await supabase.storage.from(AVATAR_BUCKET).upload(avatarPath, avatarBlob, { upsert: false, contentType: manifest.avatar_mime_type || avatarBlob.type || 'image/jpeg' });
+              const avatarMime = manifest.avatar_mime_type || avatarBlob.type || 'image/jpeg';
+              const avatarFile = new File([avatarBlob], `restore-avatar.${String(avatarMime).split('/')[1] || 'jpg'}`, { type: avatarMime, lastModified: Date.now() });
+              const optimizedAvatar = await a5OptimizeImageForStorage(avatarFile, 'avatar');
+              const avatarPath = `${currentUser.id}/restore-${Date.now()}-${uniqueId()}-${safeFileName(optimizedAvatar.name || 'avatar.webp')}`;
+              const { error: avatarUploadError } = await supabase.storage.from(AVATAR_BUCKET).upload(avatarPath, optimizedAvatar, { upsert: false, contentType: optimizedAvatar.type || avatarMime });
               if (!avatarUploadError) patch.avatar_path = avatarPath;
             }
           } catch (error) { console.warn('Could not restore profile avatar:', error); }
@@ -4297,8 +4440,9 @@
     let uploadedNewAvatar = null;
     try {
       if (selectedAvatarFile) {
-        if (!PHOTO_TYPES.includes(selectedAvatarFile.type)) throw new Error('Ảnh đại diện cần là JPG, PNG, WEBP, GIF hoặc AVIF.');
+        if (!PHOTO_TYPES.includes(selectedAvatarFile.type)) throw new Error('Ảnh đại diện cần là JPG, PNG, WEBP, GIF, AVIF.');
         if (selectedAvatarFile.size > AVATAR_MAX) throw new Error('Ảnh đại diện tối đa 5 MB.');
+        selectedAvatarFile = await a5OptimizeImageForStorage(selectedAvatarFile, 'avatar');
         const path = `${currentUser.id}/${Date.now()}-${uniqueId()}-${safeFileName(selectedAvatarFile.name)}`;
         const { error: uploadError } = await supabase.storage.from(AVATAR_BUCKET).upload(path, selectedAvatarFile, { upsert: false, contentType: selectedAvatarFile.type, cacheControl: '3600' });
         if (uploadError) throw uploadError;

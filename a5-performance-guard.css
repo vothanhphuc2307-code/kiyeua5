@@ -172,6 +172,21 @@ html.a5-auto-lite .yearbook-intro-sticker {
   filter: none !important;
 }
 
+/* Simplify the always-on ornamental motion when the browser detects a weaker
+   device, a reduced-data connection, or repeated long main-thread tasks. */
+html.a5-auto-lite .a5-wish-tree-section *,
+html.a5-auto-lite .a5-wish-sun-doodle,
+html.a5-auto-lite .a5-wish-cloud-one,
+html.a5-auto-lite .a5-wish-cloud-two,
+html.a5-auto-lite .yearbook-cover-inner::before,
+html.a5-auto-lite .yearbook-cover-inner::after,
+html.a5-auto-lite .yearbook-cover-emblem i,
+html.a5-auto-lite .yearbook-cover-corner-one,
+html.a5-auto-lite .yearbook-cover-corner-two,
+html.a5-auto-lite .a5-music-fab-dot {
+  animation: none !important;
+}
+
 html.a5-auto-lite .topbar,
 html.a5-auto-lite .mobile-nav,
 html.a5-auto-lite .modal-backdrop,
