@@ -28,17 +28,19 @@
   <link rel="stylesheet" href="a5-experience-suite.css" />
   <link rel="stylesheet" href="a5-performance-guard.css" />
   <link rel="stylesheet" href="a5-navigation-polish.css" />
+  <link rel="stylesheet" href="a5-reunion-studio.css?v=20261109-v3" />
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
   <script src="push-config.js"></script>
   <script defer src="a5-performance-mobile.js"></script>
   <script defer src="a5-motion-governor.js"></script>
-  <script defer src="app.js"></script>
+  <script defer src="app.js?v=20261109-v3"></script>
   <script defer src="a5-ui-extras.js"></script>
   <script defer src="a5-loading-experience.js"></script>
   <script defer src="a5-auth-ui-guard.js"></script>
   <script defer src="a5-visual-polish.js"></script>
   <script defer src="a5-experience-suite.js"></script>
+  <script defer src="a5-class-reunion.js?v=20261109-v3"></script>
 </head>
 <body>
   <div id="splash" class="splash" aria-label="Đang mở cuốn lưu bút">
@@ -81,11 +83,11 @@
       <a class="brand-lockup" href="#home" data-tab="home" aria-label="NHỮNG BÉ BÁO 12A5 — về trang chủ"><div class="brand-mark brand-mark-logo">A<span>5</span><i>✿</i></div><div class="brand-wording"><strong>NHỮNG BÉ BÁO 12A5</strong><small>nơi cất giữ thanh xuân</small></div></a>
       <div class="sidebar-label">KHÔNG GIAN A5</div>
       <nav class="main-nav" aria-label="Điều hướng chính">
-        <button class="nav-item active" data-tab="home"><span class="nav-icon">⌂</span><span>Trang chủ</span><span class="nav-spark">✦</span></button>
-        <button class="nav-item" data-tab="gallery"><span class="nav-icon">▧</span><span>Album kỷ niệm</span></button>
-        <button class="nav-item" data-tab="yearbook"><span class="nav-icon">📖</span><span>Cuốn kỷ yếu</span><span class="nav-spark">♡</span></button>
-        <button class="nav-item" data-tab="people"><span class="nav-icon">♡</span><span>Thành viên A5</span></button>
-        <button class="nav-item" data-tab="profile"><span class="nav-icon">☻</span><span>Góc của tớ</span></button>
+        <button class="nav-item active" data-tab="home"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 10.6 12 3.8l8.5 6.8v9a1.4 1.4 0 0 1-1.4 1.4h-4.7v-6.2H9.6V21H4.9a1.4 1.4 0 0 1-1.4-1.4z"/><path d="M9.2 21v-6.2h5.6V21"/></svg></span><span>Trang chủ</span><span class="nav-spark">✦</span></button>
+        <button class="nav-item" data-tab="gallery"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.6" y="4" width="16.8" height="16" rx="3"/><circle cx="9" cy="9.2" r="1.6"/><path d="m5 17 4.2-4 2.8 2.4 2.1-2 4.9 4.3"/></svg></span><span>Album kỷ niệm</span></button>
+        <button class="nav-item" data-tab="yearbook"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5A2.5 2.5 0 0 1 7.5 2H20v18H7.5A2.5 2.5 0 0 0 5 22z"/><path d="M5 4.5V22M9 6h7M9 10h7M9 14h5"/></svg></span><span>Cuốn kỷ yếu</span><span class="nav-spark">♡</span></button>
+        <button class="nav-item" data-tab="people"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M2.9 20a6.1 6.1 0 0 1 12.2 0"/><path d="M16 5.2a3 3 0 0 1 0 5.7M17.2 14a5.2 5.2 0 0 1 4 5"/></svg></span><span>Thành viên A5</span></button>
+        <button class="nav-item" data-tab="profile"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/><path d="m17.2 4.2 1 .8 1.2-.2-.2 1.2.8 1-1.2.3-.6 1.1-.6-1.1-1.2-.3.8-1z"/></svg></span><span>Góc của tớ</span></button>
       </nav>
       <div class="sidebar-memory-card"><div class="mini-sun">☼</div><span class="memory-card-label">LỜI NHẮN NHỎ</span><p>“Sau này gặp lại, mong chúng ta đều đã trở thành người mà mình từng mơ.”</p><span class="memory-sign">— A5, thương lắm ♡</span><div class="card-flower">✿</div></div>
       <div class="sidebar-user" id="sidebarUser"></div>
@@ -150,7 +152,11 @@
 
         <section class="page-view" id="page-people">
           <div class="page-title-row people-title"><div><span class="section-overline">OUR LITTLE CLASS</span><h1>Phòng học A5 <span class="title-doodle">♡</span></h1><p>Chọn chỗ ngồi của cậu, ghé thăm bạn bè và cùng nhau viết tiếp câu chuyện lớp mình.</p></div><div class="member-counter"><strong id="peopleCount">0</strong><span>mảnh ghép<br/>của A5</span></div></div>
-          <div class="people-mode-switch" role="tablist" aria-label="Chế độ xem thành viên"><button type="button" class="people-mode-button active" data-action="switch-people-mode" data-mode="classroom" role="tab" aria-selected="true">🏫 Phòng học A5</button><button type="button" class="people-mode-button" data-action="switch-people-mode" data-mode="directory" role="tab" aria-selected="false">👥 Danh sách bạn bè</button></div>
+          <div class="people-mode-switch" role="tablist" aria-label="Chế độ xem thành viên">
+            <button type="button" class="people-mode-button active" data-action="switch-people-mode" data-mode="classroom" role="tab" aria-selected="true">🏫 Phòng học</button>
+            <button type="button" class="people-mode-button" data-action="switch-people-mode" data-mode="directory" role="tab" aria-selected="false">👥 Bạn bè</button>
+            <button type="button" class="people-mode-button" data-action="switch-people-mode" data-mode="gathering" role="tab" aria-selected="false">✨ Tập thể 3D</button>
+          </div>
           <section class="officers-panel" id="officersPanel" aria-labelledby="officersPanelTitle">
             <div class="officers-panel-heading"><div><span class="section-overline">OUR A5 CLASS TEAM</span><h2 id="officersPanelTitle">Ban cán sự lớp mình 🌷</h2><p>Những người cùng góp sức để A5 luôn vui và gắn kết.</p></div><span class="officers-heart" aria-hidden="true">♡</span></div>
             <div id="officersSetupNotice" class="officers-setup-notice hidden"><strong>🌱 Chức năng đang chờ bật</strong><p>Người quản lý cần chạy tệp SQL <code>supabase/enable-a5-officers.sql</code> trong Supabase. Việc này chỉ tạo bảng riêng cho ban cán sự, không sửa hay xóa dữ liệu kỷ niệm.</p></div>
@@ -170,7 +176,33 @@
             <div class="classroom-bottom-note"><span>💌</span><p>Đổi chỗ cũng được nha — miễn là vẫn ngồi cùng nhau trong câu chuyện A5.</p><button type="button" class="outline-button" data-action="open-seat-picker">Chọn / đổi chỗ ngồi ↗</button></div>
           </section>
           <section id="peopleDirectoryPanel" class="people-directory-panel hidden" aria-label="Danh sách thành viên A5"><div class="people-intro"><span>🌷</span><p>Nhấn vào một chiếc thẻ để ghé thăm góc lưu bút và những ước mơ của bạn ấy.</p><span>✦</span></div><div class="people-grid" id="peopleGrid"><div class="loading-card"><span class="loading-flower">✿</span><p>Đang gọi tên những người bạn...</p></div></div><div class="empty-state hidden" id="peopleEmpty"><div class="empty-illustration">👭<span>✦</span></div><h3>Lớp mình sẽ đông vui sớm thôi</h3><p>Khi các bạn đăng nhập lần đầu, hồ sơ sẽ xuất hiện tại đây.</p></div></section>
-          <p class="classroom-privacy-note">🔒 Chỉ thành viên đã đăng nhập mới xem được sơ đồ lớp. Mỗi tài khoản chỉ giữ một chỗ; chỗ ngồi được lưu trong database để các bạn đều thấy cùng một sơ đồ.</p>
+          <section id="classGatheringPanel" class="a5-class-gathering hidden" aria-label="Tập thể 45 thành viên lớp 12A5">
+            <div class="a5-gathering-banner">
+              <div class="a5-gathering-banner-copy">
+                <span class="a5-gathering-eyebrow">OUR CLASS · ONE LITTLE UNIVERSE</span>
+                <h2>Đủ 45 mảnh ghép,<br/><em>thành một thanh xuân.</em></h2>
+                <p>Không ai đứng ngoài bức ảnh tập thể này. Sau này quay lại, mình vẫn tìm thấy nhau ở đây. ♡</p>
+                <div class="a5-gathering-counts"><strong><b id="a5RosterCount">45</b><small>thành viên</small></strong><span></span><strong><b>27</b><small>bạn nam</small></strong><span></span><strong><b>18</b><small>bạn nữ</small></strong></div>
+              </div>
+              <div class="a5-gathering-banner-art" aria-hidden="true"><div class="a5-gathering-orbit a5-orbit-one"></div><div class="a5-gathering-orbit a5-orbit-two"></div><span class="a5-gathering-sun">✿</span><span class="a5-gathering-star a5-star-one">✦</span><span class="a5-gathering-star a5-star-two">✧</span><span class="a5-gathering-note">A5<br/>forever</span></div>
+            </div>
+            <div class="a5-gathering-toolbar">
+              <label class="a5-gathering-search"><span aria-hidden="true">⌕</span><input id="a5ClassmateSearch" type="search" placeholder="Tìm tên một người bạn..." autocomplete="off" aria-label="Tìm thành viên 12A5"/></label>
+              <div class="a5-gathering-filters" role="group" aria-label="Lọc giới tính">
+                <button type="button" class="a5-gathering-filter active" data-a5-gender-filter="all">Tất cả <b>45</b></button>
+                <button type="button" class="a5-gathering-filter" data-a5-gender-filter="Nam">Nam <b>27</b></button>
+                <button type="button" class="a5-gathering-filter" data-a5-gender-filter="Nữ">Nữ <b>18</b></button>
+              </div>
+            </div>
+            <div class="a5-gathering-stage">
+              <div class="a5-gathering-stage-heading"><div><span class="section-overline">THE 12A5 CLASS PORTRAIT</span><h3>Chúng mình, ở đây. <span>♡</span></h3><p>Chạm vào một nhân vật để gửi một lời chào nho nhỏ.</p></div><span class="a5-gathering-stage-stamp">12A5<br/><small>2026</small></span></div>
+              <div id="a5ClassmateGrid" class="a5-classmate-grid" aria-live="polite"></div>
+              <div id="a5ClassmateEmpty" class="a5-classmate-empty hidden"><span>🌷</span><strong>Chưa tìm thấy người bạn này</strong><small>Thử một tên khác hoặc đổi bộ lọc nhé.</small></div>
+              <div class="a5-classmate-spotlight" id="a5ClassmateSpotlight" aria-live="polite"><span class="a5-spotlight-heart">♡</span><span><small>MỘT MẢNH GHÉP CỦA CHÚNG MÌNH</small><strong id="a5SpotlightName">45 người · một mái nhà</strong><em id="a5SpotlightNote">Chọn một nhân vật để nhìn gần hơn nhé.</em></span><span class="a5-spotlight-stamp">A5</span></div>
+            </div>
+            <p class="a5-gathering-footnote">Danh sách được lọc riêng từ các dòng mã lớp 12A05 trong ảnh ông cung cấp. Khu này chỉ hiển thị tên và giới tính, không lưu hay công khai ngày sinh. ♡</p>
+          </section>
+          <p class="classroom-privacy-note" id="classroomPrivacyNote">🔒 Chỉ thành viên đã đăng nhập mới xem được sơ đồ lớp. Mỗi tài khoản chỉ giữ một chỗ; chỗ ngồi được lưu trong database để các bạn đều thấy cùng một sơ đồ.</p>
         </section>
 
         <section class="page-view" id="page-profile">
@@ -189,7 +221,14 @@
       </div>
       <footer class="app-footer"><span>✿ NƠI LƯU GIỮ THANH XUÂN A5</span><span>được lưu bằng những điều thương mến <b>♡</b></span></footer>
     </main>
-    <nav class="mobile-nav" aria-label="Điều hướng di động"><button class="mobile-nav-item active" data-tab="home"><span>⌂</span><small>Trang chủ</small></button><button class="mobile-nav-item" data-tab="gallery"><span>▧</span><small>Album</small></button><button class="mobile-nav-item" data-tab="yearbook"><span>📖</span><small>Kỷ yếu</small></button><button class="mobile-add" data-action="upload-photo" aria-label="Thêm kỷ niệm">＋</button><button class="mobile-nav-item" data-tab="people"><span>♡</span><small>Thành viên</small></button><button class="mobile-nav-item" data-tab="profile"><span>☻</span><small>Của tớ</small></button></nav>
+    <nav class="mobile-nav" aria-label="Điều hướng di động">
+      <button class="mobile-nav-item active" data-tab="home" aria-label="Trang chủ"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 10.6 12 3.8l8.5 6.8v9a1.4 1.4 0 0 1-1.4 1.4h-4.7v-6.2H9.6V21H4.9a1.4 1.4 0 0 1-1.4-1.4z"/><path d="M9.2 21v-6.2h5.6V21"/></svg></span><small>Nhà</small></button>
+      <button class="mobile-nav-item" data-tab="gallery" aria-label="Album kỷ niệm"><span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.6" y="4" width="16.8" height="16" rx="3"/><circle cx="9" cy="9.2" r="1.6"/><path d="m5 17 4.2-4 2.8 2.4 2.1-2 4.9 4.3"/></svg></span><small>Album</small></button>
+      <button class="mobile-nav-item" data-tab="yearbook" aria-label="Cuốn kỷ yếu"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5A2.5 2.5 0 0 1 7.5 2H20v18H7.5A2.5 2.5 0 0 0 5 22z"/><path d="M5 4.5V22M9 6h7M9 10h7M9 14h5"/></svg></span><small>Kỷ yếu</small></button>
+      <button class="mobile-add" data-action="upload-photo" aria-label="Thêm kỷ niệm"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button class="mobile-nav-item" data-tab="people" aria-label="Thành viên A5"><span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M2.9 20a6.1 6.1 0 0 1 12.2 0"/><path d="M16 5.2a3 3 0 0 1 0 5.7M17.2 14a5.2 5.2 0 0 1 4 5"/></svg></span><small>Bạn bè</small></button>
+      <button class="mobile-nav-item" data-tab="profile" aria-label="Góc của tớ"><span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/><path d="m17.2 4.2 1 .8 1.2-.2-.2 1.2.8 1-1.2.3-.6 1.1-.6-1.1-1.2-.3.8-1z"/></svg></span><small>Tớ</small></button>
+    </nav>
   </div>
 
   <div class="modal-backdrop hidden" id="uploadModal" role="dialog" aria-modal="true" aria-labelledby="uploadModalTitle"><div class="modal-card upload-modal-card"><button class="modal-close" data-action="close-modal" aria-label="Đóng">×</button><div class="modal-sprinkle">✿</div><span class="section-overline">ADD TO OUR STORY</span><h2 id="uploadModalTitle">Cất một khoảnh khắc nhé!</h2><p class="modal-subtitle" id="uploadModalSubtitle">Mỗi kỷ niệm là một mảnh ghép của A5.</p><div class="upload-type-switch"><button class="upload-type active" data-upload-type="photo"><span>▧</span><strong>Ảnh</strong><small>JPG, PNG, WEBP...</small></button><button class="upload-type" data-upload-type="video"><span>▷</span><strong>Video</strong><small>MP4, MOV, WEBM...</small></button></div><form id="uploadForm"><label class="dropzone" id="dropzone"><input id="mediaFiles" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" multiple required/><span class="dropzone-icon">↥</span><strong>Kéo thả hoặc <u>chọn tệp</u></strong><small id="fileLimits">Tối đa 15 MB mỗi ảnh · có thể chọn nhiều ảnh</small><span id="selectedFiles" class="selected-files">Chưa chọn tệp nào</span></label>

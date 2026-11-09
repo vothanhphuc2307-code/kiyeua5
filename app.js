@@ -140,12 +140,12 @@
     const mainNav = $('.main-nav');
     if (mainNav && !mainNav.querySelector('[data-tab="chat"]')) {
       const galleryNav = mainNav.querySelector('[data-tab="gallery"]');
-      galleryNav?.insertAdjacentHTML('afterend', '<button class="nav-item a5-chat-nav-item" data-tab="chat"><span class="nav-icon">💬</span><span>Trò chuyện</span><span class="a5-chat-nav-badge hidden" id="a5ChatNavBadge">0</span></button>');
+      galleryNav?.insertAdjacentHTML('afterend', '<button class="nav-item a5-chat-nav-item" data-tab="chat"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 11.5a8.5 8.5 0 0 1-12.8 7.3L3 20l1.2-4.1A8.5 8.5 0 1 1 20.5 11.5Z"/><path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01"/></svg></span><span>Trò chuyện</span><span class="a5-chat-nav-badge hidden" id="a5ChatNavBadge">0</span></button>');
     }
     const mobileNav = $('.mobile-nav');
     if (mobileNav && !mobileNav.querySelector('[data-tab="chat"]')) {
-      const galleryNav = mobileNav.querySelector('[data-tab="gallery"]');
-      galleryNav?.insertAdjacentHTML('afterend', '<button class="mobile-nav-item a5-chat-mobile-nav" data-tab="chat" aria-label="Trò chuyện"><span>💬</span><small>Tin nhắn</small><b class="a5-chat-nav-badge hidden" id="a5ChatMobileBadge">0</b></button>');
+      const addButton = mobileNav.querySelector('.mobile-add');
+      addButton?.insertAdjacentHTML('afterend', '<button class="mobile-nav-item a5-chat-mobile-nav" data-tab="chat" aria-label="Trò chuyện"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 11.5a8.5 8.5 0 0 1-12.8 7.3L3 20l1.2-4.1A8.5 8.5 0 1 1 20.5 11.5Z"/><path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01"/></svg></span><small>Tin nhắn</small><b class="a5-chat-nav-badge hidden" id="a5ChatMobileBadge">0</b></button>');
     }
     const pageContent = $('.page-content');
     if (!pageContent || $('#page-chat')) return;
@@ -2428,30 +2428,39 @@
         .join(' ').toLocaleLowerCase('vi').includes(query);
     });
     const tint = ['#fde9ed', '#eee8ff', '#fff2d4', '#e5f3e8', '#fce9e0'];
-    $('#peopleCount').textContent = profiles.length;
-    $('#heroPeopleCount').textContent = `${profiles.length} thành viên`;
+    const rosterCount = Number(window.A5ClassReunion?.count) || profiles.length;
+    $('#peopleCount').textContent = rosterCount;
+    $('#heroPeopleCount').textContent = `${rosterCount} thành viên`;
     $('#heroAvatarStack').innerHTML = profiles.slice(0, 3).map((profile, index) => profile.avatar_url
       ? `<span style="padding:0;overflow:hidden;background:${tint[index % tint.length]}"><img src="${escapeAttr(profile.avatar_url)}" alt="" loading="lazy" decoding="async" fetchpriority="low" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/></span>`
       : `<span style="background:${tint[index % tint.length]}">${shortInitial(displayName(profile))}</span>`).join('') || '<span>✿</span><span>♡</span><span>☼</span>';
-    $('#peopleGrid').innerHTML = people.map((profile, index) => {
-      const ownMedia = mediaItems.filter(item => item.user_id === profile.id);
-      const bio = profile.bio || 'đang viết tiếp câu chuyện thanh xuân...';
-      const dream = profile.dream_job ? `<p class="person-dream-teaser">✨ Mơ ước: ${escapeHTML(profile.dream_job)}</p>` : '';
-      const seat = classroomSeats.find(entry => entry.user_id === profile.id);
-      const presence = a5ChatPresenceFor(profile.id);
-      return `<article class="person-card" data-action="view-profile" data-user-id="${escapeAttr(profile.id)}" tabindex="0" role="button" style="--person-tint:${tint[index % tint.length]};animation-delay:${Math.min(index * 30, 240)}ms"><div class="person-avatar a5-presence-avatar ${presence.online ? 'is-online' : 'is-offline'}" data-a5-presence-user="${escapeAttr(profile.id)}" title="${escapeAttr(`${displayName(profile)} · ${presence.label}`)}">${profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện ${escapeAttr(displayName(profile))}" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(displayName(profile))}</div><h3>${escapeHTML(displayName(profile))}</h3><p class="person-presence-line ${presence.online ? 'is-online' : 'is-offline'}" data-a5-presence-status-user="${escapeAttr(profile.id)}"><i class="a5-presence-inline-dot" aria-hidden="true"></i><span data-a5-presence-label>${escapeHTML(presence.label)}</span></p>${officerBadgeHTML(profile.id)}<p class="person-nickname">${escapeHTML(profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5')}</p><p class="person-bio">${escapeHTML(bio)}</p>${dream}${seat ? `<span class="person-seat-tag">🪑 Khu ${escapeHTML(seat.row_code)} · Bàn ${String(seat.desk_number).padStart(2, '0')} · Chỗ ${seat.seat_number}</span>` : ''}<div class="person-statline"><span>▧ <b>${ownMedia.filter(item => item.media_type === 'photo').length}</b> ảnh</span><span>▷ <b>${ownMedia.filter(item => item.media_type === 'video').length}</b> video</span></div><span class="person-view-button">Ghé thăm góc nhỏ ↗</span></article>`;
-    }).join('');
-    $('#peopleEmpty').classList.toggle('hidden', people.length !== 0);
-    $('#peopleGrid').classList.toggle('hidden', people.length === 0);
+    if (peopleMode === 'directory') {
+      $('#peopleGrid').innerHTML = people.map((profile, index) => {
+        const ownMedia = mediaItems.filter(item => item.user_id === profile.id);
+        const bio = profile.bio || 'đang viết tiếp câu chuyện thanh xuân...';
+        const dream = profile.dream_job ? `<p class="person-dream-teaser">✨ Mơ ước: ${escapeHTML(profile.dream_job)}</p>` : '';
+        const seat = classroomSeats.find(entry => entry.user_id === profile.id);
+        const presence = a5ChatPresenceFor(profile.id);
+        return `<article class="person-card" data-action="view-profile" data-user-id="${escapeAttr(profile.id)}" tabindex="0" role="button" style="--person-tint:${tint[index % tint.length]};animation-delay:${Math.min(index * 30, 240)}ms"><div class="person-avatar a5-presence-avatar ${presence.online ? 'is-online' : 'is-offline'}" data-a5-presence-user="${escapeAttr(profile.id)}" title="${escapeAttr(`${displayName(profile)} · ${presence.label}`)}">${profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện ${escapeAttr(displayName(profile))}" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(displayName(profile))}</div><h3>${escapeHTML(displayName(profile))}</h3><p class="person-presence-line ${presence.online ? 'is-online' : 'is-offline'}" data-a5-presence-status-user="${escapeAttr(profile.id)}"><i class="a5-presence-inline-dot" aria-hidden="true"></i><span data-a5-presence-label>${escapeHTML(presence.label)}</span></p>${officerBadgeHTML(profile.id)}<p class="person-nickname">${escapeHTML(profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5')}</p><p class="person-bio">${escapeHTML(bio)}</p>${dream}${seat ? `<span class="person-seat-tag">🪑 Khu ${escapeHTML(seat.row_code)} · Bàn ${String(seat.desk_number).padStart(2, '0')} · Chỗ ${seat.seat_number}</span>` : ''}<div class="person-statline"><span>▧ <b>${ownMedia.filter(item => item.media_type === 'photo').length}</b> ảnh</span><span>▷ <b>${ownMedia.filter(item => item.media_type === 'video').length}</b> video</span></div><span class="person-view-button">Ghé thăm góc nhỏ ↗</span></article>`;
+      }).join('');
+    }
+    if (peopleMode === 'directory') {
+      $('#peopleEmpty').classList.toggle('hidden', people.length !== 0);
+      $('#peopleGrid').classList.toggle('hidden', people.length === 0);
+    }
     $('#classroomPanel')?.classList.toggle('hidden', peopleMode !== 'classroom');
     $('#peopleDirectoryPanel')?.classList.toggle('hidden', peopleMode !== 'directory');
+    $('#classGatheringPanel')?.classList.toggle('hidden', peopleMode !== 'gathering');
+    $('#officersPanel')?.classList.toggle('hidden', peopleMode === 'gathering');
+    $('#classroomPrivacyNote')?.classList.toggle('hidden', peopleMode !== 'classroom');
+    if (peopleMode === 'gathering') window.A5ClassReunion?.render?.();
     $$('[data-action="switch-people-mode"]').forEach(button => {
       const active = button.dataset.mode === peopleMode;
       button.classList.toggle('active', active);
       button.setAttribute('aria-selected', String(active));
     });
-    renderClassroom();
-    renderOfficerPanel();
+    if (peopleMode === 'classroom') renderClassroom();
+    if (peopleMode !== 'gathering') renderOfficerPanel();
   }
 
   const A5_OFFICER_ROLES = [
@@ -2702,8 +2711,7 @@
       return;
     }
     if (action === 'welcome-yearbook') {
-      yearbookOpened = true; yearbookSpreadIndex = 0;
-      switchTab('yearbook'); renderYearbook();
+      openYearbookFlow();
       return;
     }
     if (action === 'welcome-dismiss' && !currentClassroomSeat()) {
@@ -2720,7 +2728,7 @@
   }
 
   function switchPeopleMode(mode) {
-    peopleMode = mode === 'directory' ? 'directory' : 'classroom';
+    peopleMode = ['directory', 'gathering'].includes(mode) ? mode : 'classroom';
     renderPeople();
   }
 
@@ -3510,6 +3518,25 @@
     updateActiveTab();
     if (activeTab === 'yearbook' && yearbookOpened && !Array.isArray(yearbookMediaCache) && !yearbookLoading) void loadYearbookData();
   }
+  function openYearbookFlow() {
+    // Show the cover first, then let the dedicated motion layer flip it open.
+    yearbookOpened = false;
+    yearbookTurning = false;
+    yearbookSpreadIndex = 0;
+    switchTab('yearbook');
+    const beginOpening = () => {
+      const finishOpening = () => {
+        yearbookOpened = true;
+        yearbookSpreadIndex = 0;
+        renderYearbook();
+        if (!Array.isArray(yearbookMediaCache) && !yearbookLoading) void loadYearbookData();
+      };
+      if (window.A5YearbookBookMotion?.open) window.A5YearbookBookMotion.open(finishOpening);
+      else finishOpening();
+    };
+    window.setTimeout(beginOpening, 90);
+  }
+
   function switchTab(tab) {
     if (!['home', 'gallery', 'yearbook', 'people', 'profile', 'chat', 'journey'].includes(tab)) return;
     if (activeTab === 'yearbook' && tab !== 'yearbook' && a5YearbookPendingLiveUpdate) {
@@ -4920,7 +4947,7 @@
       else if (action === 'upload-photo') openUpload('photo');
       else if (action === 'upload-video') openUpload('video');
       else if (action === 'toggle-wish-tree-mobile') toggleA5WishTreeMobile(actionButton);
-      else if (action === 'open-yearbook') { yearbookOpened = true; yearbookSpreadIndex = 0; switchTab('yearbook'); renderYearbook(); }
+      else if (action === 'open-yearbook') openYearbookFlow();
       else if (action === 'close-yearbook') { yearbookOpened = false; yearbookTurning = false; renderYearbook(); }
       else if (action === 'yearbook-next') turnYearbookPage(1);
       else if (action === 'yearbook-prev') turnYearbookPage(-1);
