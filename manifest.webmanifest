@@ -2,7 +2,7 @@
   "id": "/",
   "name": "NHỮNG BÉ BÁO 12A5 · Nơi lưu giữ thanh xuân",
   "short_name": "Bé Báo 12A5",
-  "description": "Ứng dụng NHỮNG BÉ BÁO 12A5 đang tạm khóa.",
+  "description": "Góc lưu bút, album và kỷ niệm của lớp 12A5.",
   "lang": "vi-VN",
   "start_url": "/",
   "scope": "/",
@@ -12,8 +12,8 @@
     "minimal-ui"
   ],
   "orientation": "any",
-  "background_color": "#241522",
-  "theme_color": "#241522",
+  "background_color": "#fffaf8",
+  "theme_color": "#fff3f6",
   "categories": [
     "education",
     "social",
