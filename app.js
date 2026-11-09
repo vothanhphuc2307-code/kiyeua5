@@ -22,6 +22,19 @@
   const MEDIA_BUCKET = 'memory-media';
   const AVATAR_BUCKET = 'profile-avatars';
 
+  // ── A5 NextGen · Supabase egress & storage savers ─────────────────────────
+  // Storage objects use unique, never-overwritten paths, so they can be cached
+  // "forever" by the browser/CDN. Signed URLs are reused across reloads so the
+  // HTTP cache (and the service worker media cache) can actually hit.
+  const A5_IMMUTABLE_CACHE_CONTROL = '31536000';
+  const A5_SIGNED_URL_TTL_SECONDS = 2 * 24 * 60 * 60;          // 48h signature
+  const A5_SIGNED_URL_REUSE_MS = 40 * 60 * 60 * 1000;           // reuse for 40h
+  const A5_SIGNED_URL_STORE_KEY = 'a5_signed_url_cache_v2';
+  const A5_SIGNED_URL_STORE_LIMIT = 700;
+  // Files uploaded by this version carry a marker, meaning a lightweight preview
+  // (photo thumbnail / video poster) exists at "<uid>/thumbs/<file name>".
+  const A5_THUMB_MARKER = '-a5t-';
+
   // Profile memory archive: query one small page at a time, rather than trying to
   // render every post owned by a member in the profile UI.
   const PROFILE_ARCHIVE_PAGE_SIZE = 12;
@@ -49,6 +62,7 @@
   let homeMonthFilter = 'all';
   let galleryMonthFilter = 'all';
   let signedUrlCache = new Map();
+  let a5SignedUrlPersistTimer = 0;
   let activeTab = 'home';
   let yearbookOpened = false;
   let yearbookSpreadIndex = 0;
@@ -1345,7 +1359,92 @@
     stopA5WishRealtime(); a5WishLoadToken += 1; a5WishItems = []; a5WishCount = 0; a5WishPage = 0; a5WishBusy = false;
     currentUser = null; currentProfile = null; profiles = []; mediaItems = []; reactionItems = []; classroomSeats = []; classroomFeatureAvailable = false; classOfficerAssignments = []; officersFeatureAvailable = false; isA5SiteAdmin = false; seatPromptShownForUserId = null; lastUserId = null; profileArchiveStates.clear(); profileArchiveItemsById.clear(); publicProfileUserId = null;
     yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookOpened = false; yearbookSpreadIndex = 0;
-    signedUrlCache.clear(); showAuthScreen(); toast('Hẹn gặp cậu ở cuốn lưu bút nhé ♡', 'success');
+    a5ForgetSignedUrls({ clearDeviceMediaCache: true }); showAuthScreen(); toast('Hẹn gặp cậu ở cuốn lưu bút nhé ♡', 'success');
+  }
+
+  // ── Persistent signed-URL cache ───────────────────────────────────────────
+  // Re-using the same signed URL across reloads lets the browser HTTP cache and
+  // the service worker serve photos locally instead of downloading them again
+  // from Supabase (which is what eats the Free-plan egress quota).
+  function a5RestoreSignedUrlCache() {
+    try {
+      const raw = localStorage.getItem(A5_SIGNED_URL_STORE_KEY);
+      if (!raw) return;
+      const entries = JSON.parse(raw);
+      if (!Array.isArray(entries)) return;
+      const now = Date.now();
+      entries.forEach(entry => {
+        if (!Array.isArray(entry) || entry.length < 3) return;
+        const [key, url, expiresAt] = entry;
+        if (typeof key === 'string' && typeof url === 'string' && url.startsWith('http') && Number(expiresAt) > now + 60 * 1000) {
+          signedUrlCache.set(key, { url, expiresAt: Number(expiresAt) });
+        }
+      });
+    } catch (_) { /* Private mode / corrupted value: start with an empty cache. */ }
+  }
+  function a5PersistSignedUrlCacheSoon() {
+    if (a5SignedUrlPersistTimer) return;
+    a5SignedUrlPersistTimer = window.setTimeout(() => {
+      a5SignedUrlPersistTimer = 0;
+      try {
+        const now = Date.now();
+        const entries = [...signedUrlCache.entries()]
+          .filter(([, value]) => value?.url && value.expiresAt > now)
+          .slice(-A5_SIGNED_URL_STORE_LIMIT)
+          .map(([key, value]) => [key, value.url, value.expiresAt]);
+        localStorage.setItem(A5_SIGNED_URL_STORE_KEY, JSON.stringify(entries));
+      } catch (_) { /* Quota exceeded: the in-memory cache still works. */ }
+    }, 900);
+  }
+  function a5RememberSignedUrl(bucket, path, url) {
+    if (!url) return;
+    signedUrlCache.set(`${bucket}:${path}`, { url, expiresAt: Date.now() + A5_SIGNED_URL_REUSE_MS });
+    a5PersistSignedUrlCacheSoon();
+  }
+  function a5ForgetSignedUrls({ clearDeviceMediaCache = false } = {}) {
+    signedUrlCache.clear();
+    try { localStorage.removeItem(A5_SIGNED_URL_STORE_KEY); } catch (_) {}
+    if (clearDeviceMediaCache) {
+      try { navigator.serviceWorker?.controller?.postMessage({ type: 'a5-clear-media-cache' }); } catch (_) {}
+    }
+  }
+  a5RestoreSignedUrlCache();
+
+  // ── Lightweight previews (thumbnails / video posters) ─────────────────────
+  function a5ThumbPathFor(storagePath) {
+    const path = String(storagePath || '');
+    if (!path.includes(A5_THUMB_MARKER)) return '';
+    const slash = path.indexOf('/');
+    if (slash <= 0 || slash === path.length - 1) return '';
+    return `${path.slice(0, slash)}/thumbs/${path.slice(slash + 1).replace(/\//g, '_')}`;
+  }
+  async function a5ResolveThumbUrls(items) {
+    const byStoragePath = new Map();
+    const thumbPaths = [];
+    (items || []).forEach(item => {
+      const thumbPath = a5ThumbPathFor(item?.storage_path);
+      if (!thumbPath) return;
+      byStoragePath.set(item.storage_path, thumbPath);
+      thumbPaths.push(thumbPath);
+    });
+    const result = new Map();
+    if (!thumbPaths.length) return result;
+    // No per-file fallback: a missing preview simply means "use the original".
+    const signed = await resolveSignedUrls(MEDIA_BUCKET, thumbPaths, { fallback: false });
+    byStoragePath.forEach((thumbPath, storagePath) => {
+      const url = signed.get(thumbPath);
+      if (url) result.set(storagePath, url);
+    });
+    return result;
+  }
+  // Grid/cards use the small preview; the viewer & download keep the original.
+  function a5PreviewSrc(item) {
+    return String(item?.thumb_url || item?.url || '');
+  }
+  function a5VideoPosterHTML(item) {
+    return item?.thumb_url
+      ? `<img class="a5-video-poster" src="${escapeAttr(item.thumb_url)}" alt="" loading="lazy" decoding="async" fetchpriority="low"/>`
+      : '';
   }
 
   async function resolveSignedUrl(bucket, path) {
@@ -1354,10 +1453,10 @@
     const cached = signedUrlCache.get(key);
     if (cached && cached.expiresAt > Date.now()) return cached.url;
     try {
-      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 86400);
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, A5_SIGNED_URL_TTL_SECONDS);
       if (error) throw error;
       const url = data?.signedUrl || '';
-      signedUrlCache.set(key, { url, expiresAt: Date.now() + 22 * 60 * 60 * 1000 });
+      a5RememberSignedUrl(bucket, path, url);
       return url;
     } catch (error) {
       console.warn(`Could not sign ${bucket} path`, error);
@@ -1367,7 +1466,8 @@
 
   // Sign many private media objects in batches instead of making one network request per file.
   // This dramatically reduces initial-load latency on a feed with many photos and avatars.
-  async function resolveSignedUrls(bucket, paths) {
+  async function resolveSignedUrls(bucket, paths, options = {}) {
+    const allowFallback = options.fallback !== false;
     const result = new Map();
     if (!supabase) return result;
     const uniquePaths = [...new Set((paths || []).filter(path => typeof path === 'string' && path.trim()))];
@@ -1384,7 +1484,7 @@
     for (let i = 0; i < missing.length; i += 70) batches.push(missing.slice(i, i + 70));
     const failedPaths = [];
     const batchResults = await Promise.allSettled(batches.map(pathsChunk =>
-      supabase.storage.from(bucket).createSignedUrls(pathsChunk, 86400)
+      supabase.storage.from(bucket).createSignedUrls(pathsChunk, A5_SIGNED_URL_TTL_SECONDS)
     ));
 
     batchResults.forEach((batchResult, batchIndex) => {
@@ -1402,8 +1502,7 @@
         const url = row?.signedUrl || row?.signedURL || '';
         if (!path || !url || row?.error) return;
         remaining.delete(path);
-        const key = `${bucket}:${path}`;
-        signedUrlCache.set(key, { url, expiresAt: Date.now() + 22 * 60 * 60 * 1000 });
+        a5RememberSignedUrl(bucket, path, url);
         result.set(path, url);
       });
       failedPaths.push(...remaining);
@@ -1411,7 +1510,7 @@
 
     // Graceful fallback for storage SDK/server responses that omit an item in the batch result.
     // Limit concurrency so an unusual bucket response cannot flood the server with requests.
-    if (failedPaths.length) {
+    if (failedPaths.length && allowFallback) {
       let cursor = 0;
       const workers = Array.from({ length: Math.min(6, failedPaths.length) }, async () => {
         while (cursor < failedPaths.length) {
@@ -1448,9 +1547,10 @@
       const rawProfiles = profileResult.data || [];
       const rawMedia = mediaResult.data || [];
       // Sign private avatar and media URLs concurrently; neither request depends on the other.
-      const [avatarUrlMap, mediaUrlMap] = await Promise.all([
+      const [avatarUrlMap, mediaUrlMap, thumbUrlMap] = await Promise.all([
         resolveSignedUrls(AVATAR_BUCKET, rawProfiles.map(profile => profile.avatar_path)),
-        resolveSignedUrls(MEDIA_BUCKET, rawMedia.map(item => item.storage_path))
+        resolveSignedUrls(MEDIA_BUCKET, rawMedia.map(item => item.storage_path)),
+        a5ResolveThumbUrls(rawMedia)
       ]);
       const profileResolved = rawProfiles.map(profile => ({
         ...profile, avatar_url: profile.avatar_path ? (avatarUrlMap.get(profile.avatar_path) || '') : ''
@@ -1471,7 +1571,7 @@
       mediaItems = rawMedia.map(item => {
         const owner = profiles.find(profile => profile.id === item.user_id) || null;
         const mediaUrl = mediaUrlMap.get(item.storage_path) || '';
-        return { ...item, url: mediaUrl, profiles: owner };
+        return { ...item, url: mediaUrl, thumb_url: thumbUrlMap.get(item.storage_path) || '', profiles: owner };
       });
       a5RealtimeMediaSignature = a5LiveMediaSignature(rawMedia);
       a5RealtimeProfileSignature = a5LiveProfileSignature(rawProfiles);
@@ -1635,9 +1735,10 @@
 
     const oldProfiles = new Map(profiles.map(profile => [profile.id, profile]));
     const oldMedia = new Map(mediaItems.map(item => [item.id, item]));
-    const [avatarUrlMap, mediaUrlMap] = await Promise.all([
+    const [avatarUrlMap, mediaUrlMap, thumbUrlMap] = await Promise.all([
       resolveSignedUrls(AVATAR_BUCKET, rawProfiles.map(profile => profile.avatar_path)),
-      resolveSignedUrls(MEDIA_BUCKET, rawMedia.map(item => item.storage_path))
+      resolveSignedUrls(MEDIA_BUCKET, rawMedia.map(item => item.storage_path)),
+      a5ResolveThumbUrls(rawMedia)
     ]);
     if (!currentUser || currentUser.id !== requestedUserId) return { profilesChanged: false, mediaChanged: false };
 
@@ -1656,6 +1757,7 @@
       return {
         ...item,
         url: mediaUrl,
+        thumb_url: thumbUrlMap.get(item.storage_path) || (old?.storage_path === item.storage_path ? (old.thumb_url || '') : ''),
         profiles: profiles.find(profile => profile.id === item.user_id) || null,
         reactions: old?.reactions || []
       };
@@ -1965,8 +2067,8 @@
     const mediaLabel = item.media_type === 'video' ? '▶ VIDEO' : '▧ ẢNH';
     const media = item.url
       ? (item.media_type === 'video'
-        ? `<div class="media-video-placeholder" aria-hidden="true"><span>▶</span><small>VIDEO KỶ NIỆM</small><i>chạm để xem</i></div>`
-        : `<img src="${escapeAttr(item.url)}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}" loading="lazy" decoding="async"/>`)
+        ? `<div class="media-video-placeholder${item.thumb_url ? ' a5-has-poster' : ''}" aria-hidden="true">${a5VideoPosterHTML(item)}<span>▶</span><small>VIDEO KỶ NIỆM</small><i>chạm để xem</i></div>`
+        : `<img src="${escapeAttr(a5PreviewSrc(item))}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}" loading="lazy" decoding="async"/>`)
       : `<div class="media-visual-fallback">${item.media_type === 'video' ? '▷' : '✿'}</div>`;
     const caption = item.caption ? `<p class="media-note" style="--note-color:${safeColor(item.note_color)};--note-font:'${safeFont(item.note_font)}'">${escapeHTML(item.caption)}</p>` : '';
     const album = item.album_name ? `<button type="button" class="event-album-tag" data-action="filter-album" data-album-name="${escapeAttr(item.album_name)}">✦ ${escapeHTML(item.album_name)}</button>` : '';
@@ -2019,7 +2121,7 @@
     const desiredNodes = matches.map(item => {
       const owner = profiles.find(profile => profile.id === item.user_id) || {};
       const preview = item.url
-        ? (item.media_type === 'video' ? '<span class="media-video-placeholder on-day-video-placeholder" aria-hidden="true"><span>▶</span><small>VIDEO</small></span>' : `<img src="${escapeAttr(item.url)}" alt="" loading="lazy" decoding="async"/>`)
+        ? (item.media_type === 'video' ? `<span class="media-video-placeholder on-day-video-placeholder${item.thumb_url ? ' a5-has-poster' : ''}" aria-hidden="true">${a5VideoPosterHTML(item)}<span>▶</span><small>VIDEO</small></span>` : `<img src="${escapeAttr(a5PreviewSrc(item))}" alt="" loading="lazy" decoding="async"/>`)
         : '<span>♡</span>';
       const signature = JSON.stringify([item.id, item.caption, item.url, item.media_type, item.user_id, displayName(owner), item.created_at]);
       const template = document.createElement('template');
@@ -2201,8 +2303,8 @@
     const isoValue = Number.isNaN(iso.getTime()) ? '' : iso.toISOString();
     const mediaVisual = item.url
       ? (isVideo
-        ? `<div class="a5-home-memory-video-art" aria-hidden="true"><span class="a5-home-video-orbit orbit-one"></span><span class="a5-home-video-orbit orbit-two"></span><span class="a5-home-video-play">▶</span><small>VIDEO KỶ NIỆM</small></div>`
-        : `<img src="${escapeAttr(item.url)}" alt="${escapeAttr(title)}" loading="lazy" decoding="async" fetchpriority="low"/>`)
+        ? `<div class="a5-home-memory-video-art${item.thumb_url ? ' a5-has-poster' : ''}" aria-hidden="true">${a5VideoPosterHTML(item)}<span class="a5-home-video-orbit orbit-one"></span><span class="a5-home-video-orbit orbit-two"></span><span class="a5-home-video-play">▶</span><small>VIDEO KỶ NIỆM</small></div>`
+        : `<img src="${escapeAttr(a5PreviewSrc(item))}" alt="${escapeAttr(title)}" loading="lazy" decoding="async" fetchpriority="low"/>`)
       : `<div class="a5-home-memory-fallback" aria-hidden="true">${isVideo ? '▷' : '✿'}<small>Đang chuẩn bị kỷ niệm…</small></div>`;
     const signature = JSON.stringify([item.id, item.url || '', item.media_type, item.caption || '', item.album_name || '', item.created_at, item.user_id, displayName(owner), owner.avatar_url || '']);
     const template = document.createElement('template');
@@ -2429,6 +2531,7 @@
     });
     const tint = ['#fde9ed', '#eee8ff', '#fff2d4', '#e5f3e8', '#fce9e0'];
     const rosterCount = Number(window.A5ClassReunion?.count) || profiles.length;
+    window.A5ClassReunion?.syncProfiles?.(profiles, openPublicProfile);
     $('#peopleCount').textContent = rosterCount;
     $('#heroPeopleCount').textContent = `${rosterCount} thành viên`;
     $('#heroAvatarStack').innerHTML = profiles.slice(0, 3).map((profile, index) => profile.avatar_url
@@ -2441,7 +2544,8 @@
         const dream = profile.dream_job ? `<p class="person-dream-teaser">✨ Mơ ước: ${escapeHTML(profile.dream_job)}</p>` : '';
         const seat = classroomSeats.find(entry => entry.user_id === profile.id);
         const presence = a5ChatPresenceFor(profile.id);
-        return `<article class="person-card" data-action="view-profile" data-user-id="${escapeAttr(profile.id)}" tabindex="0" role="button" style="--person-tint:${tint[index % tint.length]};animation-delay:${Math.min(index * 30, 240)}ms"><div class="person-avatar a5-presence-avatar ${presence.online ? 'is-online' : 'is-offline'}" data-a5-presence-user="${escapeAttr(profile.id)}" title="${escapeAttr(`${displayName(profile)} · ${presence.label}`)}">${profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện ${escapeAttr(displayName(profile))}" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(displayName(profile))}</div><h3>${escapeHTML(displayName(profile))}</h3><p class="person-presence-line ${presence.online ? 'is-online' : 'is-offline'}" data-a5-presence-status-user="${escapeAttr(profile.id)}"><i class="a5-presence-inline-dot" aria-hidden="true"></i><span data-a5-presence-label>${escapeHTML(presence.label)}</span></p>${officerBadgeHTML(profile.id)}<p class="person-nickname">${escapeHTML(profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5')}</p><p class="person-bio">${escapeHTML(bio)}</p>${dream}${seat ? `<span class="person-seat-tag">🪑 Khu ${escapeHTML(seat.row_code)} · Bàn ${String(seat.desk_number).padStart(2, '0')} · Chỗ ${seat.seat_number}</span>` : ''}<div class="person-statline"><span>▧ <b>${ownMedia.filter(item => item.media_type === 'photo').length}</b> ảnh</span><span>▷ <b>${ownMedia.filter(item => item.media_type === 'video').length}</b> video</span></div><span class="person-view-button">Ghé thăm góc nhỏ ↗</span></article>`;
+        const mini3d = window.A5ClassReunion?.miniFigurineForProfile?.(profile, index) || '';
+        return `<article class="person-card a5-3d-tilt-card" data-action="view-profile" data-user-id="${escapeAttr(profile.id)}" tabindex="0" role="button" style="--person-tint:${tint[index % tint.length]};animation-delay:${Math.min(index * 30, 240)}ms">${mini3d}<div class="person-avatar a5-presence-avatar ${presence.online ? 'is-online' : 'is-offline'}" data-a5-presence-user="${escapeAttr(profile.id)}" title="${escapeAttr(`${displayName(profile)} · ${presence.label}`)}">${profile.avatar_url ? `<img src="${escapeAttr(profile.avatar_url)}" alt="Ảnh đại diện ${escapeAttr(displayName(profile))}" loading="lazy" decoding="async" fetchpriority="low"/>` : shortInitial(displayName(profile))}</div><h3>${escapeHTML(displayName(profile))}</h3><p class="person-presence-line ${presence.online ? 'is-online' : 'is-offline'}" data-a5-presence-status-user="${escapeAttr(profile.id)}"><i class="a5-presence-inline-dot" aria-hidden="true"></i><span data-a5-presence-label>${escapeHTML(presence.label)}</span></p>${officerBadgeHTML(profile.id)}<p class="person-nickname">${escapeHTML(profile.nickname ? `“${profile.nickname}”` : 'một mảnh ghép của A5')}</p><p class="person-bio">${escapeHTML(bio)}</p>${dream}${seat ? `<span class="person-seat-tag">🪑 Khu ${escapeHTML(seat.row_code)} · Bàn ${String(seat.desk_number).padStart(2, '0')} · Chỗ ${seat.seat_number}</span>` : ''}<div class="person-statline"><span>▧ <b>${ownMedia.filter(item => item.media_type === 'photo').length}</b> ảnh</span><span>▷ <b>${ownMedia.filter(item => item.media_type === 'video').length}</b> video</span></div><span class="person-view-button">Ghé thăm góc nhỏ ↗</span></article>`;
       }).join('');
     }
     if (peopleMode === 'directory') {
@@ -2727,10 +2831,24 @@
     }, 650);
   }
 
-  function switchPeopleMode(mode) {
-    peopleMode = ['directory', 'gathering'].includes(mode) ? mode : 'classroom';
-    renderPeople();
+  function switchPeopleMode(mode, options = {}) {
+    const nextMode = ['directory', 'gathering'].includes(mode) ? mode : 'classroom';
+    const changed = peopleMode !== nextMode;
+    peopleMode = nextMode;
+    const apply = () => {
+      renderPeople();
+      if (typeof options.focusClassmateIndex === 'number' && nextMode === 'gathering') {
+        window.A5ClassReunion?.focusMember?.(options.focusClassmateIndex);
+      }
+    };
+    const reduceMotion = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
+    const isLite = document.documentElement.classList.contains('a5-perf-lite') || document.documentElement.classList.contains('a5-auto-lite');
+    if (changed && !reduceMotion && !isLite && typeof document.startViewTransition === 'function' && document.visibilityState === 'visible') {
+      try { document.startViewTransition(apply); return; } catch (_) {}
+    }
+    apply();
   }
+  window.A5SwitchPeopleMode = switchPeopleMode;
 
   async function chooseClassroomSeat(seatCode) {
     if (!supabase || !currentUser || !classroomFeatureAvailable || seatSaving) return;
@@ -2878,8 +2996,8 @@
     const isVideo = item.media_type === 'video';
     const visual = item.url
       ? (isVideo
-        ? '<span class="profile-archive-video"><span aria-hidden="true">▶</span><small>VIDEO</small></span>'
-        : `<img src="${escapeAttr(item.url)}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}" loading="lazy" decoding="async" fetchpriority="low"/>`)
+        ? `<span class="profile-archive-video${item.thumb_url ? ' a5-has-poster' : ''}">${a5VideoPosterHTML(item)}<span aria-hidden="true">▶</span><small>VIDEO</small></span>`
+        : `<img src="${escapeAttr(a5PreviewSrc(item))}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}" loading="lazy" decoding="async" fetchpriority="low"/>`)
       : `<span class="profile-archive-fallback" aria-hidden="true">${isVideo ? '▷' : '✿'}</span>`;
     const caption = item.caption || (isVideo ? 'Một đoạn thanh xuân ♡' : 'Một ngày đáng nhớ ♡');
     return `<button type="button" class="profile-archive-tile" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở kỷ niệm: ${escapeAttr(caption)}" style="--archive-order:${Math.min(index, 7)}"><span class="profile-archive-tile-media">${visual}<span class="profile-archive-tile-sticker" aria-hidden="true">${index % 3 === 0 ? '✿' : (index % 3 === 1 ? '♡' : '✦')}</span></span><span class="profile-archive-tile-copy"><strong>${escapeHTML(caption)}</strong><small>${escapeHTML(formatDate(item.created_at, false))}</small></span></button>`;
@@ -2941,7 +3059,10 @@
         .range(start, start + PROFILE_ARCHIVE_PAGE_SIZE - 1);
       if (error) throw error;
       const rows = data || [];
-      const urlMap = await resolveSignedUrls(MEDIA_BUCKET, rows.map(item => item.storage_path));
+      const [urlMap, thumbMap] = await Promise.all([
+        resolveSignedUrls(MEDIA_BUCKET, rows.map(item => item.storage_path)),
+        a5ResolveThumbUrls(rows)
+      ]);
       if (token !== state.requestToken) return;
       // Keep just the current archive page in the lightweight media lookup cache.
       state.items.forEach(old => {
@@ -2950,6 +3071,7 @@
       state.items = rows.map(item => ({
         ...item,
         url: urlMap.get(item.storage_path) || '',
+        thumb_url: thumbMap.get(item.storage_path) || '',
         profiles: profiles.find(profile => profile.id === item.user_id) || null,
         reactions: []
       }));
@@ -3021,8 +3143,8 @@
       grid.classList.remove('profile-archive-tiles', 'profile-archive-tiles-public');
       delete grid.dataset.profileArchiveSignature;
       grid.innerHTML = photos.map(item => item.url ? (item.media_type === 'video'
-        ? `<button type="button" class="public-profile-photo video-thumb" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở video kỷ niệm"><span class="media-video-placeholder" aria-hidden="true"><span>▶</span><small>VIDEO</small></span></button>`
-        : `<button type="button" class="public-profile-photo" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở ảnh kỷ niệm"><img src="${escapeAttr(item.url)}" alt="Kỷ niệm" loading="lazy" decoding="async"/></button>`)
+        ? `<button type="button" class="public-profile-photo video-thumb" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở video kỷ niệm"><span class="media-video-placeholder${item.thumb_url ? ' a5-has-poster' : ''}" aria-hidden="true">${a5VideoPosterHTML(item)}<span>▶</span><small>VIDEO</small></span></button>`
+        : `<button type="button" class="public-profile-photo" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở ảnh kỷ niệm"><img src="${escapeAttr(a5PreviewSrc(item))}" alt="Kỷ niệm" loading="lazy" decoding="async"/></button>`)
         : '<div class="public-profile-photo">✿</div>').join('');
       grid.classList.toggle('hidden', photos.length === 0);
     }
@@ -3351,9 +3473,9 @@
       const event = String(item.album_name || '').trim() || 'Những ngày bình thường';
       const caption = String(item.caption || '').trim() || 'Một khoảnh khắc nhỏ, để sau này còn nhớ ♡';
       const visual = item.media_type === 'video' && item.url
-        ? `<div class="yearbook-video-visual"><video src="${escapeAttr(item.url)}" muted playsinline preload="none" tabindex="-1" aria-hidden="true"></video><span class="yearbook-video-play">▶</span><span class="yearbook-video-label">VIDEO KỶ NIỆM</span></div>`
+        ? `<div class="yearbook-video-visual">${item.thumb_url ? `<img class="a5-video-poster" src="${escapeAttr(item.thumb_url)}" alt="" loading="lazy" decoding="async" fetchpriority="low"/>` : `<video src="${escapeAttr(item.url)}" muted playsinline preload="none" tabindex="-1" aria-hidden="true"></video>`}<span class="yearbook-video-play">▶</span><span class="yearbook-video-label">VIDEO KỶ NIỆM</span></div>`
         : item.media_type !== 'video' && item.url
-          ? `<img src="${escapeAttr(item.url)}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}" loading="lazy" decoding="async" fetchpriority="low"/>`
+          ? `<img src="${escapeAttr(a5PreviewSrc(item))}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}" loading="lazy" decoding="async" fetchpriority="low"/>`
           : `<span class="yearbook-missing-visual">${item.media_type === 'video' ? '🎞️' : '📷'}<small>Không tải được bản xem trước</small></span>`;
       return `<article class="yearbook-polaroid" style="--tilt:${tilt}deg;--paper-accent:${accent}"><span class="yearbook-tape" aria-hidden="true"></span><button type="button" class="yearbook-media-button" data-action="yearbook-view-media" data-media-id="${escapeAttr(item.id)}" aria-label="Mở ${item.media_type === 'video' ? 'video' : 'ảnh'}: ${escapeAttr(caption)}">${visual}<span class="yearbook-zoom-hint" aria-hidden="true">↗</span></button><div class="yearbook-polaroid-copy"><span class="yearbook-date-note">${escapeHTML(date)}</span><strong class="yearbook-event-note">${escapeHTML(event)}</strong><p>${escapeHTML(caption)}</p><small class="yearbook-signed">— ${escapeHTML(displayName(owner))}</small></div></article>`;
     }).join('') : `<div class="yearbook-page-empty"><span>✿</span><strong>Chỗ này còn để trống nè</strong><p>Khi A5 đăng thêm kỷ niệm, những tấm ảnh mới sẽ được dán vào đây.</p></div>`;
@@ -3386,7 +3508,14 @@
     const leftRaw = chronological.slice(start, start + 2);
     const rightRaw = isMobile ? [] : chronological.slice(start + 2, start + 4);
     const visibleRaw = [...leftRaw, ...rightRaw];
-    const itemsWithUrls = visibleRaw.map(item => ({ ...item, url: yearbookSignedUrls.has(item.id) ? (yearbookSignedUrls.get(item.id) || '') : (item.url || '') }));
+    const itemsWithUrls = visibleRaw.map(item => {
+      const cachedMain = mediaItems.find(m => m.id === item.id);
+      return {
+        ...item,
+        url: yearbookSignedUrls.has(item.id) ? (yearbookSignedUrls.get(item.id) || '') : (item.url || cachedMain?.url || ''),
+        thumb_url: item.thumb_url || cachedMain?.thumb_url || yearbookSignedUrls.get(`thumb:${item.id}`) || ''
+      };
+    });
     const leftItems = itemsWithUrls.slice(0, 2);
     const rightItems = isMobile ? [] : itemsWithUrls.slice(2, 4);
     const pageLeft = isMobile ? yearbookSpreadIndex + 1 : yearbookSpreadIndex * 2 + 1;
@@ -3409,10 +3538,17 @@
     // Make signed URLs only for the visible spread, rather than downloading/signing every file at once.
     const unresolved = visibleRaw.filter(item => item.storage_path && !yearbookSignedUrls.has(item.id));
     if (unresolved.length && supabase) {
-      Promise.all(unresolved.map(async item => [item.id, await resolveSignedUrl(MEDIA_BUCKET, item.storage_path)]))
-        .then(results => {
+      Promise.all([
+        Promise.all(unresolved.map(async item => [item.id, await resolveSignedUrl(MEDIA_BUCKET, item.storage_path)])),
+        a5ResolveThumbUrls(unresolved)
+      ])
+        .then(([results, thumbMap]) => {
           if (renderGeneration !== yearbookRenderGeneration || !yearbookOpened) return;
           results.forEach(([id, url]) => yearbookSignedUrls.set(id, url || ''));
+          unresolved.forEach(item => {
+            const tUrl = thumbMap.get(item.storage_path);
+            if (tUrl) yearbookSignedUrls.set(`thumb:${item.id}`, tUrl);
+          });
           if (!yearbookTurning) renderYearbook();
         })
         .catch(error => console.warn('Yearbook media URLs could not be prepared:', error));
@@ -3537,24 +3673,48 @@
     window.setTimeout(beginOpening, 90);
   }
 
+  const A5_TAB_ORDER = ['home', 'gallery', 'chat', 'yearbook', 'journey', 'people', 'profile'];
   function switchTab(tab) {
     if (!['home', 'gallery', 'yearbook', 'people', 'profile', 'chat', 'journey'].includes(tab)) return;
+    const prevTab = activeTab;
+    const prevIdx = A5_TAB_ORDER.indexOf(prevTab);
+    const nextIdx = A5_TAB_ORDER.indexOf(tab);
+    const direction = nextIdx >= prevIdx ? 'forward' : 'backward';
+    document.documentElement.dataset.a5NavDir = direction;
     if (activeTab === 'yearbook' && tab !== 'yearbook' && a5YearbookPendingLiveUpdate) {
       yearbookLoadGeneration += 1; yearbookLoading = false; yearbookMediaCache = null; yearbookSignedUrls.clear(); yearbookRenderGeneration += 1;
       a5YearbookPendingLiveUpdate = false;
     }
-    activeTab = tab;
-    updateActiveTab();
-    if (tab === 'gallery') renderGallery();
-    if (tab === 'yearbook') { renderYearbook(); if (yearbookOpened) void loadYearbookData(); }
-    if (tab === 'people') renderPeople();
-    if (tab === 'profile') renderProfile();
-    if (tab === 'journey') window.A5MemoryJourney?.render?.();
-    if (tab === 'chat') {
-      if (a5ChatFeatureAvailable) { renderA5ChatInbox(); if (a5ChatSelectedConversationId) renderA5ChatThreadState(); }
-      void loadA5ChatInbox({ silent: a5ChatFeatureAvailable });
-    }
+    const applySwitch = () => {
+      activeTab = tab;
+      updateActiveTab();
+      if (tab === 'gallery') renderGallery();
+      if (tab === 'yearbook') { renderYearbook(); if (yearbookOpened) void loadYearbookData(); }
+      if (tab === 'people') renderPeople();
+      if (tab === 'profile') renderProfile();
+      if (tab === 'journey') window.A5MemoryJourney?.render?.();
+      if (tab === 'chat') {
+        if (a5ChatFeatureAvailable) { renderA5ChatInbox(); if (a5ChatSelectedConversationId) renderA5ChatThreadState(); }
+        void loadA5ChatInbox({ silent: a5ChatFeatureAvailable });
+      }
+      const nextPage = $(`#page-${tab}`);
+      if (nextPage && prevTab !== tab) {
+        nextPage.classList.remove('a5-page-slide-forward', 'a5-page-slide-backward');
+        void nextPage.offsetWidth;
+        nextPage.classList.add(direction === 'backward' ? 'a5-page-slide-backward' : 'a5-page-slide-forward');
+      }
+    };
     const reduceMotion = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
+    const isLite = document.documentElement.classList.contains('a5-perf-lite') || document.documentElement.classList.contains('a5-auto-lite');
+    if (prevTab !== tab && !reduceMotion && !isLite && typeof document.startViewTransition === 'function' && document.visibilityState === 'visible') {
+      try {
+        document.startViewTransition(() => applySwitch());
+      } catch (_) {
+        applySwitch();
+      }
+    } else {
+      applySwitch();
+    }
     window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
   }
   function updateActiveTab() {
@@ -3630,9 +3790,61 @@
   // has a small shared storage quota, so store right-sized WebP originals rather
   // than relying on server-side image transformations (not available on Free).
   const A5_IMAGE_PROFILES = {
-    memory: { maxEdge: 2560, maxPixels: 18_000_000, targetBytes: 880 * 1024, qualities: [0.82, 0.76, 0.70] },
-    avatar: { maxEdge: 800, maxPixels: 1_000_000, targetBytes: 180 * 1024, qualities: [0.82, 0.75, 0.68] }
+    memory:          { maxEdge: 2048, maxPixels: 12_000_000, targetBytes: 520 * 1024, qualities: [0.82, 0.75, 0.68] },
+    memory_balanced: { maxEdge: 2048, maxPixels: 12_000_000, targetBytes: 520 * 1024, qualities: [0.82, 0.75, 0.68] },
+    memory_hd:       { maxEdge: 2560, maxPixels: 18_000_000, targetBytes: 880 * 1024, qualities: [0.85, 0.79, 0.73] },
+    memory_eco:      { maxEdge: 1600, maxPixels:  7_500_000, targetBytes: 290 * 1024, qualities: [0.76, 0.69, 0.62] },
+    avatar:          { maxEdge:  720, maxPixels:    850_000, targetBytes: 130 * 1024, qualities: [0.82, 0.75, 0.68] },
+    thumb:           { maxEdge:  680, maxPixels:    380_000, targetBytes:  64 * 1024, qualities: [0.75, 0.67, 0.58] }
   };
+
+  function a5SelectedCompressionProfileKey() {
+    const mode = String($('#uploadCompressionMode')?.value || 'memory_balanced');
+    return A5_IMAGE_PROFILES[mode] ? mode : 'memory_balanced';
+  }
+
+  // Step-down high-quality canvas draw: halving large camera photos in stages
+  // avoids box-sampling moire and produces sharper, more compressible WebP output.
+  function a5DrawHighQualityScaled(source, srcW, srcH, dstCanvas, dstW, dstH) {
+    dstCanvas.width = dstW;
+    dstCanvas.height = dstH;
+    const ctx = dstCanvas.getContext('2d', { alpha: true });
+    if (!ctx) return false;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    if (Math.max(srcW / dstW, srcH / dstH) <= 2.15) {
+      ctx.drawImage(source, 0, 0, dstW, dstH);
+      return true;
+    }
+    let curW = Math.max(dstW, Math.round(srcW * 0.5));
+    let curH = Math.max(dstH, Math.round(srcH * 0.5));
+    const stepA = document.createElement('canvas');
+    const stepB = document.createElement('canvas');
+    stepA.width = curW; stepA.height = curH;
+    const ctxA = stepA.getContext('2d', { alpha: true });
+    if (!ctxA) { ctx.drawImage(source, 0, 0, dstW, dstH); return true; }
+    ctxA.imageSmoothingEnabled = true;
+    ctxA.imageSmoothingQuality = 'high';
+    ctxA.drawImage(source, 0, 0, curW, curH);
+    let current = stepA;
+    while (curW * 0.5 > dstW * 1.15 && curH * 0.5 > dstH * 1.15) {
+      const nextW = Math.max(dstW, Math.round(curW * 0.5));
+      const nextH = Math.max(dstH, Math.round(curH * 0.5));
+      const target = current === stepA ? stepB : stepA;
+      target.width = nextW; target.height = nextH;
+      const tCtx = target.getContext('2d', { alpha: true });
+      if (!tCtx) break;
+      tCtx.imageSmoothingEnabled = true;
+      tCtx.imageSmoothingQuality = 'high';
+      tCtx.drawImage(current, 0, 0, curW, curH, 0, 0, nextW, nextH);
+      curW = nextW; curH = nextH;
+      current = target;
+    }
+    ctx.drawImage(current, 0, 0, curW, curH, 0, 0, dstW, dstH);
+    stepA.width = 1; stepA.height = 1;
+    stepB.width = 1; stepB.height = 1;
+    return true;
+  }
 
   async function a5LoadImageForCompression(file) {
     if (typeof createImageBitmap === 'function') {
@@ -3694,13 +3906,7 @@
       const outputWidth = Math.max(1, Math.round(width * scale));
       const outputHeight = Math.max(1, Math.round(height * scale));
       canvas = document.createElement('canvas');
-      canvas.width = outputWidth;
-      canvas.height = outputHeight;
-      const context = canvas.getContext('2d', { alpha: true });
-      if (!context) return file;
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = 'high';
-      context.drawImage(decoded.source, 0, 0, outputWidth, outputHeight);
+      if (!a5DrawHighQualityScaled(decoded.source, width, height, canvas, outputWidth, outputHeight)) return file;
 
       let blob = null;
       for (const quality of profile.qualities) {
@@ -3709,22 +3915,16 @@
       }
       // For unusually detailed photos, spend a little more resolution to stay
       // compact while retaining enough detail for a class-memory gallery.
-      if (blob && blob.size > profile.targetBytes * 1.35 && Math.max(outputWidth, outputHeight) > 1400) {
-        const smallerWidth = Math.max(1, Math.round(outputWidth * 0.86));
-        const smallerHeight = Math.max(1, Math.round(outputHeight * 0.86));
-        canvas.width = smallerWidth;
-        canvas.height = smallerHeight;
-        const smallerContext = canvas.getContext('2d', { alpha: true });
-        if (smallerContext) {
-          smallerContext.imageSmoothingEnabled = true;
-          smallerContext.imageSmoothingQuality = 'high';
-          smallerContext.drawImage(decoded.source, 0, 0, smallerWidth, smallerHeight);
+      if (blob && blob.size > profile.targetBytes * 1.35 && Math.max(outputWidth, outputHeight) > 1280) {
+        const smallerWidth = Math.max(1, Math.round(outputWidth * 0.85));
+        const smallerHeight = Math.max(1, Math.round(outputHeight * 0.85));
+        if (a5DrawHighQualityScaled(decoded.source, width, height, canvas, smallerWidth, smallerHeight)) {
           blob = await a5CanvasToBlob(canvas, profile.qualities[profile.qualities.length - 1]);
         }
       }
       // If WebP is unavailable, or conversion would make the file larger, keep
       // the source untouched rather than risking a broken or lower-value result.
-      if (!blob || blob.type !== 'image/webp' || blob.size >= file.size * 0.98) return file;
+      if (!blob || blob.type !== 'image/webp' || (purpose !== 'thumb' && blob.size >= file.size * 0.98)) return file;
       const stem = String(file.name || 'a5-memory').replace(/\.[^.]+$/, '') || 'a5-memory';
       return new File([blob], `${stem}.webp`, { type: 'image/webp', lastModified: file.lastModified || Date.now() });
     } catch (error) {
@@ -3734,6 +3934,91 @@
       decoded?.release?.();
       if (canvas) { canvas.width = 1; canvas.height = 1; }
     }
+  }
+
+  // Generate a compact ~50KB WebP thumbnail for photos or a poster frame for videos
+  // so album/home grids load 10x faster and save ~85% Supabase bandwidth.
+  async function a5GenerateMediaThumbBlob(file, mediaType) {
+    try {
+      if (mediaType === 'photo') {
+        if (!(file instanceof Blob) || await a5ImageHasAnimation(file)) return null;
+        // Skip separate thumb if the optimized photo is already tiny (<115 KB).
+        if (file.size <= 115 * 1024 && file.type === 'image/webp') return null;
+        const thumbFile = await a5OptimizeImageForStorage(file, 'thumb');
+        if (thumbFile && thumbFile !== file && thumbFile.type === 'image/webp' && thumbFile.size < file.size * 0.72) {
+          return thumbFile;
+        }
+        return null;
+      }
+      if (mediaType === 'video' && file instanceof Blob) {
+        return await new Promise(resolve => {
+          const url = URL.createObjectURL(file);
+          const video = document.createElement('video');
+          let settled = false;
+          const finish = (result) => {
+            if (settled) return;
+            settled = true;
+            try { video.pause(); video.removeAttribute('src'); video.load(); } catch (_) {}
+            URL.revokeObjectURL(url);
+            resolve(result || null);
+          };
+          const timer = window.setTimeout(() => finish(null), 4200);
+          video.muted = true;
+          video.playsInline = true;
+          video.preload = 'metadata';
+          video.onerror = () => { window.clearTimeout(timer); finish(null); };
+          video.onloadedmetadata = () => {
+            const duration = Number(video.duration);
+            const targetTime = Number.isFinite(duration) && duration > 0.6 ? Math.min(1.0, duration * 0.2) : 0.1;
+            try { video.currentTime = targetTime; }
+            catch (_) { window.clearTimeout(timer); finish(null); }
+          };
+          video.onseeked = async () => {
+            window.clearTimeout(timer);
+            try {
+              const vw = Math.max(1, video.videoWidth || 640);
+              const vh = Math.max(1, video.videoHeight || 360);
+              const scale = Math.min(1, 640 / Math.max(vw, vh));
+              const cw = Math.max(1, Math.round(vw * scale));
+              const ch = Math.max(1, Math.round(vh * scale));
+              const canvas = document.createElement('canvas');
+              canvas.width = cw;
+              canvas.height = ch;
+              const ctx = canvas.getContext('2d', { alpha: false });
+              if (!ctx) return finish(null);
+              ctx.drawImage(video, 0, 0, cw, ch);
+              const blob = await a5CanvasToBlob(canvas, 0.74);
+              canvas.width = 1; canvas.height = 1;
+              finish(blob && blob.type === 'image/webp' && blob.size > 200 ? blob : null);
+            } catch (_) {
+              finish(null);
+            }
+          };
+          video.src = url;
+        });
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  async function a5UploadThumbAndResolveMainPath(baseMainPath, thumbBlob) {
+    if (!thumbBlob || !supabase || !currentUser) return { mainPath: baseMainPath, thumbPath: '' };
+    // Insert the -a5t- marker into the filename so a5ThumbPathFor(mainPath) knows a preview exists.
+    const slash = baseMainPath.indexOf('/');
+    const markedPath = slash > 0
+      ? `${baseMainPath.slice(0, slash + 1)}${Date.now()}${A5_THUMB_MARKER}${baseMainPath.slice(slash + 1).replace(/^\d+-/, '')}`
+      : baseMainPath;
+    const thumbPath = a5ThumbPathFor(markedPath);
+    if (!thumbPath) return { mainPath: baseMainPath, thumbPath: '' };
+    try {
+      const { error } = await supabase.storage.from(MEDIA_BUCKET).upload(thumbPath, thumbBlob, {
+        cacheControl: A5_IMMUTABLE_CACHE_CONTROL,
+        upsert: false,
+        contentType: 'image/webp'
+      });
+      if (!error) return { mainPath: markedPath, thumbPath };
+    } catch (_) {}
+    return { mainPath: baseMainPath, thumbPath: '' };
   }
   function updateSelectedFileLabel() {
     const element = $('#selectedFiles');
@@ -4132,7 +4417,7 @@
             bucketName: MEDIA_BUCKET,
             objectName: path,
             contentType: file.type || 'application/octet-stream',
-            cacheControl: '3600'
+            cacheControl: A5_IMMUTABLE_CACHE_CONTROL
           },
           onProgress: (bytesUploaded, bytesTotal) => {
             try { onProgress?.(bytesUploaded, bytesTotal); }
@@ -4176,7 +4461,7 @@
       toast('Chưa tải được thư viện upload tiếp tục; đang dùng cách tải thông thường nhé.', 'info', 4500);
     }
     const { error } = await supabase.storage.from(MEDIA_BUCKET).upload(storagePath, file, {
-      cacheControl: '3600', upsert: false, contentType: file.type
+      cacheControl: A5_IMMUTABLE_CACHE_CONTROL, upsert: false, contentType: file.type
     });
     if (error) throw error;
     onProgress?.(file.size, file.size);
@@ -4205,13 +4490,14 @@
     let complete = 0;
     try {
       if (currentUploadType === 'photo') {
+        const compressionProfile = a5SelectedCompressionProfileKey();
         const originalBytes = files.reduce((sum, file) => sum + file.size, 0);
         const optimizedFiles = [];
         for (let index = 0; index < files.length; index++) {
           const file = files[index];
           progressText.textContent = `Đang nén ảnh ${index + 1}/${files.length} · ${file.name}…`;
           bar.style.width = `${Math.max(4, Math.round((index / files.length) * 8))}%`;
-          optimizedFiles.push(await a5OptimizeImageForStorage(file, 'memory'));
+          optimizedFiles.push(await a5OptimizeImageForStorage(file, compressionProfile));
         }
         files = optimizedFiles;
         selectedUploadFiles = optimizedFiles;
@@ -4220,7 +4506,7 @@
         const savedBytes = Math.max(0, originalBytes - optimizedBytes);
         if (savedBytes > 0) {
           const percent = Math.round((savedBytes / Math.max(1, originalBytes)) * 100);
-          progressText.textContent = `Đã tối ưu ảnh · tiết kiệm ${humanBytes(savedBytes)} (${percent}%). Đang lưu kỷ niệm…`;
+          progressText.textContent = `Đã tối ưu ảnh WebP · tiết kiệm ${humanBytes(savedBytes)} (${percent}%) dung lượng Supabase! Đang lưu…`;
         } else {
           progressText.textContent = 'Ảnh đã gọn hoặc trình duyệt không hỗ trợ WebP · đang lưu kỷ niệm…';
         }
@@ -4230,9 +4516,19 @@
       for (const file of files) {
         const usesTus = file.size > TUS_UPLOAD_THRESHOLD;
         const resumeKey = usesTus ? a5TusResumeKey(file) : null;
-        const path = usesTus
+        const basePath = usesTus
           ? a5GetOrCreateTusPath(file, resumeKey)
           : `${currentUser.id}/${Date.now()}-${uniqueId()}-${safeFileName(file.name)}`;
+        let path = basePath;
+        let uploadedThumbPath = '';
+        if (!usesTus) {
+          const thumbBlob = await a5GenerateMediaThumbBlob(file, currentUploadType);
+          if (thumbBlob) {
+            const thumbResult = await a5UploadThumbAndResolveMainPath(basePath, thumbBlob);
+            path = thumbResult.mainPath;
+            uploadedThumbPath = thumbResult.thumbPath;
+          }
+        }
         const updateProgress = (bytesUploaded, bytesTotal) => {
           const currentRatio = bytesTotal > 0 ? Math.min(1, bytesUploaded / bytesTotal) : 0;
           const overall = Math.min(100, Math.round(((complete + currentRatio) / files.length) * 100));
@@ -4242,7 +4538,15 @@
         };
         progressText.textContent = `${usesTus ? 'Đang chuẩn bị upload theo phần' : 'Đang tải'} ${file.name}... (${complete + 1}/${files.length})`;
         bar.style.width = `${Math.max(8, Math.round((complete / files.length) * 100))}%`;
-        const storagePath = await a5UploadMediaObject(file, path, updateProgress, resumeKey);
+        let storagePath;
+        try {
+          storagePath = await a5UploadMediaObject(file, path, updateProgress, resumeKey);
+        } catch (uploadObjError) {
+          if (uploadedThumbPath) {
+            try { await supabase.storage.from(MEDIA_BUCKET).remove([uploadedThumbPath]); } catch (_) {}
+          }
+          throw uploadObjError;
+        }
         savedPaths.push(storagePath);
         const { error: insertError } = await supabase.from('media_items').insert({
           user_id: currentUser.id, media_type: currentUploadType, storage_path: storagePath,
@@ -4251,7 +4555,8 @@
         if (insertError) {
           // Remove any newly uploaded object and clear the resume key so the next
           // attempt cannot accidentally resume a completed upload with no DB row.
-          try { await supabase.storage.from(MEDIA_BUCKET).remove([storagePath]); }
+          const toRemove = uploadedThumbPath ? [storagePath, uploadedThumbPath] : [storagePath];
+          try { await supabase.storage.from(MEDIA_BUCKET).remove(toRemove); }
           finally { a5ClearTusResumePath(resumeKey); savedPaths.pop(); }
           throw insertError;
         }
@@ -4262,7 +4567,7 @@
       bar.style.width = '100%'; progressText.textContent = 'Đã cất vào cuốn lưu bút ♡';
       closeModals();
       toast(files.length === 1 ? 'Kỷ niệm đã được cất vào album A5! ♡' : `Đã lưu ${files.length} kỷ niệm vào album A5! ♡`, 'success');
-      signedUrlCache.clear(); await loadData(false);
+      a5PersistSignedUrlCacheSoon(); await loadData(false);
       switchTab('gallery');
     } catch (error) {
       console.error('Upload failed:', error);
@@ -4393,7 +4698,7 @@
             filename = safeFileName(uploadFile.name || filename);
           }
           const path = `${currentUser.id}/restore-${Date.now()}-${uniqueId()}-${filename}`;
-          const { error: uploadError } = await supabase.storage.from(MEDIA_BUCKET).upload(path, uploadFile, { cacheControl: '3600', upsert: false, contentType: mime });
+          const { error: uploadError } = await supabase.storage.from(MEDIA_BUCKET).upload(path, uploadFile, { cacheControl: A5_IMMUTABLE_CACHE_CONTROL, upsert: false, contentType: mime });
           if (uploadError) throw uploadError;
           const payload = { user_id: currentUser.id, media_type: entry.media_type, storage_path: path, caption: String(entry.caption || '').slice(0, 500), note_color: safeColor(entry.note_color), note_font: safeFont(entry.note_font), album_name: String(entry.album_name || '').slice(0, 60) || null };
           if (entry.created_at && !Number.isNaN(new Date(entry.created_at).getTime())) payload.created_at = new Date(entry.created_at).toISOString();
@@ -4413,7 +4718,7 @@
               const avatarFile = new File([avatarBlob], `restore-avatar.${String(avatarMime).split('/')[1] || 'jpg'}`, { type: avatarMime, lastModified: Date.now() });
               const optimizedAvatar = await a5OptimizeImageForStorage(avatarFile, 'avatar');
               const avatarPath = `${currentUser.id}/restore-${Date.now()}-${uniqueId()}-${safeFileName(optimizedAvatar.name || 'avatar.webp')}`;
-              const { error: avatarUploadError } = await supabase.storage.from(AVATAR_BUCKET).upload(avatarPath, optimizedAvatar, { upsert: false, contentType: optimizedAvatar.type || avatarMime });
+              const { error: avatarUploadError } = await supabase.storage.from(AVATAR_BUCKET).upload(avatarPath, optimizedAvatar, { cacheControl: A5_IMMUTABLE_CACHE_CONTROL, upsert: false, contentType: optimizedAvatar.type || avatarMime });
               if (!avatarUploadError) patch.avatar_path = avatarPath;
             }
           } catch (error) { console.warn('Could not restore profile avatar:', error); }
@@ -4421,7 +4726,7 @@
         const { error: profileError } = await supabase.from('profiles').update(patch).eq('id', currentUser.id);
         if (profileError) errors.push(`Hồ sơ: ${profileError.message}`);
       }
-      signedUrlCache.clear(); await loadData(false);
+      a5PersistSignedUrlCacheSoon(); await loadData(false);
       if (status) status.textContent = `Khôi phục xong ${restored}/${manifest.media.length} bài.${errors.length ? ` Có ${errors.length} mục cần kiểm tra.` : ''}`;
       toast(`Khôi phục ${restored}/${manifest.media.length} bài đăng. ${errors.length ? 'Một số mục gặp lỗi; xem phần trạng thái trong hồ sơ.' : 'Hoàn tất ♡'}`, errors.length ? 'info' : 'success', 6500);
     } catch (error) {
@@ -4471,7 +4776,7 @@
         if (selectedAvatarFile.size > AVATAR_MAX) throw new Error('Ảnh đại diện tối đa 5 MB.');
         selectedAvatarFile = await a5OptimizeImageForStorage(selectedAvatarFile, 'avatar');
         const path = `${currentUser.id}/${Date.now()}-${uniqueId()}-${safeFileName(selectedAvatarFile.name)}`;
-        const { error: uploadError } = await supabase.storage.from(AVATAR_BUCKET).upload(path, selectedAvatarFile, { upsert: false, contentType: selectedAvatarFile.type, cacheControl: '3600' });
+        const { error: uploadError } = await supabase.storage.from(AVATAR_BUCKET).upload(path, selectedAvatarFile, { upsert: false, contentType: selectedAvatarFile.type, cacheControl: A5_IMMUTABLE_CACHE_CONTROL });
         if (uploadError) throw uploadError;
         avatarPath = path; uploadedNewAvatar = path;
       }
@@ -4531,11 +4836,15 @@
     try {
       const { error } = await supabase.from('media_items').delete().eq('id', id).eq('user_id', currentUser.id);
       if (error) throw error;
-      const { error: storageError } = await supabase.storage.from(MEDIA_BUCKET).remove([item.storage_path]);
+      const thumbToRemove = a5ThumbPathFor(item.storage_path);
+      const pathsToRemove = thumbToRemove ? [item.storage_path, thumbToRemove] : [item.storage_path];
+      const { error: storageError } = await supabase.storage.from(MEDIA_BUCKET).remove(pathsToRemove);
       if (storageError) console.warn('Media record deleted but storage cleanup failed:', storageError.message);
       reactionItems = reactionItems.filter(reaction => reaction.media_id !== id);
       mediaItems = mediaItems.filter(media => media.id !== id);
       signedUrlCache.delete(`${MEDIA_BUCKET}:${item.storage_path}`);
+      if (thumbToRemove) signedUrlCache.delete(`${MEDIA_BUCKET}:${thumbToRemove}`);
+      a5PersistSignedUrlCacheSoon();
       closeModals(); renderAll(); toast('Kỷ niệm đã được xóa khỏi album.', 'success');
     } catch (error) {
       console.error('Delete failed:', error); toast(`Không xóa được kỷ niệm: ${(error?.message || '').slice(0, 100)}`, 'error');
@@ -4659,7 +4968,7 @@
     const owner = profiles.find(profile => profile.id === item.user_id) || item.profiles || {};
     const content = $('#viewerMediaContent');
     content.innerHTML = item.media_type === 'video'
-      ? `<video src="${escapeAttr(item.url)}" controls autoplay playsinline preload="metadata" aria-label="Video kỷ niệm"></video>`
+      ? `<video src="${escapeAttr(item.url)}" ${item.thumb_url ? `poster="${escapeAttr(item.thumb_url)}"` : ''} controls autoplay playsinline preload="metadata" aria-label="Video kỷ niệm"></video>`
       : `<img src="${escapeAttr(item.url)}" alt="Kỷ niệm của ${escapeAttr(displayName(owner))}" decoding="async" fetchpriority="high"/>`;
     $('#viewerTitle').textContent = item.album_name || (item.media_type === 'video' ? 'Một đoạn video của A5' : 'Một mảnh thanh xuân');
     $('#viewerCaption').textContent = item.caption || 'Một khoảnh khắc được lưu lại ♡';
@@ -4791,7 +5100,7 @@
     const publicGrid = $('#publicProfilePhotos');
     publicGrid.classList.remove('profile-archive-tiles', 'profile-archive-tiles-public');
     delete publicGrid.dataset.profileArchiveSignature;
-    publicGrid.innerHTML = photos.map(item => item.url ? (item.media_type === 'video' ? `<button type="button" class="public-profile-photo video-thumb" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở video kỷ niệm"><span class="media-video-placeholder" aria-hidden="true"><span>▶</span><small>VIDEO</small></span></button>` : `<button type="button" class="public-profile-photo" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở ảnh kỷ niệm"><img src="${escapeAttr(item.url)}" alt="Kỷ niệm" loading="lazy" decoding="async"/></button>`) : '<div class="public-profile-photo">✿</div>').join('');
+    publicGrid.innerHTML = photos.map(item => item.url ? (item.media_type === 'video' ? `<button type="button" class="public-profile-photo video-thumb" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở video kỷ niệm"><span class="media-video-placeholder${item.thumb_url ? ' a5-has-poster' : ''}" aria-hidden="true">${a5VideoPosterHTML(item)}<span>▶</span><small>VIDEO</small></span></button>` : `<button type="button" class="public-profile-photo" data-action="open-viewer" data-media-id="${escapeAttr(item.id)}" aria-label="Mở ảnh kỷ niệm"><img src="${escapeAttr(a5PreviewSrc(item))}" alt="Kỷ niệm" loading="lazy" decoding="async"/></button>`) : '<div class="public-profile-photo">✿</div>').join('');
     publicGrid.classList.toggle('hidden', photos.length === 0);
     updateProfileArchiveControls('public', id);
     openModal('publicProfileModal');

@@ -1,5 +1,6 @@
-/* A5 UI Extras v1.0 — lightweight scroll progress + back-to-top.
-   No libraries, storage, network calls, or Supabase dependencies. */
+/* A5 UI Extras v2.0 — scroll progress, back-to-top, youth theme switcher,
+   reaction emoji burst, and Supabase compression savings preview.
+   No external libraries, no network calls, no Supabase mutations. */
 (() => {
   'use strict';
 
@@ -10,6 +11,14 @@
   const docScroller = () => document.scrollingElement || document.documentElement;
   const isScrollable = el => Boolean(el && el.nodeType === 1 && el.scrollHeight > el.clientHeight + 32);
 
+  const YOUTH_THEMES = [
+    { key: 'sakura', icon: '🌸', label: 'Nắng trường', title: 'Nắng Sân Trường · Hồng phấn & kem ấm' },
+    { key: 'sky', icon: '🌤️', label: 'Trời xanh', title: 'Bầu Trời Thanh Xuân · Xanh mây trong trẻo' },
+    { key: 'sunset', icon: '🌅', label: 'Hoàng hôn', title: 'Hoàng Hôn Cuối Cấp · Cam đào & tím chiều' },
+    { key: 'notebook', icon: '📓', label: 'Lưu bút', title: 'Lưu Bút Giấy Kraft · Hoài niệm trang vở' }
+  ];
+  const THEME_STORAGE_KEY = 'a5_youth_theme_v1';
+
   let activeScrollTarget = null;
   let framePending = false;
   let progressRoot = null;
@@ -17,6 +26,58 @@
   let topButton = null;
   let shellObserver = null;
   let modalObserver = null;
+  let currentThemeIndex = 0;
+
+  function applyYouthTheme(index, persist = false) {
+    currentThemeIndex = ((index % YOUTH_THEMES.length) + YOUTH_THEMES.length) % YOUTH_THEMES.length;
+    const theme = YOUTH_THEMES[currentThemeIndex];
+    document.documentElement.dataset.a5YouthTheme = theme.key;
+    const btn = document.getElementById('a5ThemeCycleBtn');
+    if (btn) {
+      const iconEl = btn.querySelector('.a5-theme-cycle-icon');
+      const labelEl = btn.querySelector('.a5-theme-cycle-label');
+      if (iconEl) iconEl.textContent = theme.icon;
+      if (labelEl) labelEl.textContent = theme.label;
+      btn.title = `Giao diện: ${theme.title} (Nhấn để đổi)`;
+    }
+    if (persist) {
+      try { localStorage.setItem(THEME_STORAGE_KEY, theme.key); } catch (_) {}
+    }
+  }
+
+  function restoreYouthTheme() {
+    try {
+      const saved = localStorage.getItem(THEME_STORAGE_KEY);
+      const found = YOUTH_THEMES.findIndex(t => t.key === saved);
+      applyYouthTheme(found >= 0 ? found : 0, false);
+    } catch (_) {
+      applyYouthTheme(0, false);
+    }
+  }
+
+  function spawnEmojiBurst(originEl, emojiText) {
+    if (reduceMotion() || document.documentElement.classList.contains('a5-perf-lite')) return;
+    if (!(originEl instanceof Element)) return;
+    const rect = originEl.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return;
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const symbols = [emojiText || '🩷', '✨', '✿', emojiText || '♡'];
+    for (let i = 0; i < 4; i++) {
+      const node = document.createElement('span');
+      node.className = 'a5-emoji-burst-particle';
+      node.setAttribute('aria-hidden', 'true');
+      node.textContent = symbols[i % symbols.length];
+      const dx = ((i - 1.5) * 18 + (Math.random() * 10 - 5)).toFixed(1);
+      const dy = (-28 - Math.random() * 22).toFixed(1);
+      node.style.left = `${cx}px`;
+      node.style.top = `${cy}px`;
+      node.style.setProperty('--burst-dx', `${dx}px`);
+      node.style.setProperty('--burst-dy', `${dy}px`);
+      document.body.appendChild(node);
+      window.setTimeout(() => node.remove(), 680);
+    }
+  }
 
   function appIsVisible() {
     const shell = document.getElementById('appShell');
@@ -31,8 +92,6 @@
 
   function pageScrollTargetFrom(target) {
     if (!(target instanceof Element)) return docScroller();
-    // Only accept the actual page-level scrolling element. Do not mistake a
-    // nested chat message list or media editor for the page scroll container.
     return target.matches('.page-content, .app-main, .app-shell') && isScrollable(target)
       ? target
       : docScroller();
@@ -121,7 +180,6 @@
       if (shell) shellObserver.observe(shell, { attributes: true, attributeFilter: ['class', 'hidden'] });
       if (auth) shellObserver.observe(auth, { attributes: true, attributeFilter: ['class', 'hidden'] });
 
-      // Observe only known modal backdrops, not the whole app DOM.
       modalObserver = new MutationObserver(scheduleUpdate);
       document.querySelectorAll('.modal-backdrop, .media-viewer-backdrop, .a5-chat-lightbox').forEach(el => {
         modalObserver.observe(el, { attributes: true, attributeFilter: ['class', 'hidden', 'style'] });
@@ -130,6 +188,7 @@
   }
 
   function boot() {
+    restoreYouthTheme();
     if (!document.body || document.getElementById('a5UiExtrasProgress')) return;
 
     progressRoot = document.createElement('div');
@@ -159,7 +218,21 @@
     window.addEventListener('pageshow', scheduleUpdate, { passive: true });
     document.addEventListener('click', event => {
       const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest('button, a, [data-tab], [data-action]')) {
+      if (!target) return;
+
+      const themeBtn = target.closest('#a5ThemeCycleBtn');
+      if (themeBtn) {
+        applyYouthTheme(currentThemeIndex + 1, true);
+        spawnEmojiBurst(themeBtn, YOUTH_THEMES[currentThemeIndex].icon);
+        return;
+      }
+
+      const reactBtn = target.closest('.reaction-pill[data-action="toggle-reaction"], .reaction-picker-choice[data-action="pick-reaction"]');
+      if (reactBtn) {
+        spawnEmojiBurst(reactBtn, reactBtn.dataset.emoji || '🩷');
+      }
+
+      if (target.closest('button, a, [data-tab], [data-action]')) {
         window.setTimeout(scheduleUpdate, 0);
       }
     }, true);
